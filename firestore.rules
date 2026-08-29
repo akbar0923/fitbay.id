@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function: Apakah pengguna sudah login
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function: Apakah pengguna adalah Admin
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in ['muhbar@fitbay.id', 'nessa@fitbay.id', 'admin@admin.id'] ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    // 1. Transaksi Penjualan
+    // Staff & Admin bisa membaca, menambah, dan mengedit
+    // HANYA Admin yang berhak MENGHAPUS transaksi
+    match /transactions/{transactionId} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+    
+    // 2. Pemilik Barang (Titipan)
+    // Semua tim yang login bisa melihat dan menambah
+    // HANYA Admin yang berhak menghapus
+    match /owners/{ownerId} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // 3. Profil Pengguna & Role
+    // Pengguna yang login bisa membaca profil tim & update profilnya
+    match /users/{userId} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // 4. Penarikan Saldo Bagi Hasil (Keuangan Sensitif)
+    // HANYA Admin yang bisa melihat riwayat, mencatat, mengedit, dan menghapus penarikan
+    match /withdrawals/{withdrawalId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 5. Pengaturan Sistem (Persentase Pembagian Hasil)
+    // Semua tim bisa membaca persentase aktif, tetapi HANYA Admin yang bisa mengubah
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Blokir total untuk akses tanpa login atau koleksi liar
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
