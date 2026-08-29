@@ -155,7 +155,7 @@ export default function Users() {
 
     setActionLoading(true);
     try {
-      await createUserByAdmin({
+      const created = await createUserByAdmin({
         name: formData.name,
         username: cleanUsername,
         password: formData.password,
@@ -164,6 +164,7 @@ export default function Users() {
         createdBy: currentUser?.username || 'admin',
       });
 
+      setUsers((prev) => [created, ...prev.filter((u) => u.username?.toLowerCase() !== cleanUsername)]);
       toast.success(`Akun "${formData.name}" (@${cleanUsername}) berhasil dibuat!`);
       setIsAddModalOpen(false);
     } catch (err) {
@@ -194,12 +195,18 @@ export default function Users() {
 
     setActionLoading(true);
     try {
-      await updateUserProfileData(selectedUser.uid, {
+      const updatePayload = {
         name: editFormData.name.trim(),
         role: editFormData.role,
         title: editFormData.title.trim() || (editFormData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
         status: editFormData.status,
-      });
+      };
+
+      await updateUserProfileData(selectedUser.uid, updatePayload);
+
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === selectedUser.uid ? { ...u, ...updatePayload } : u))
+      );
 
       toast.success(`Data user ${selectedUser.name} berhasil diperbarui!`);
       setIsEditModalOpen(false);
@@ -247,6 +254,9 @@ export default function Users() {
     setActionLoading(true);
     try {
       await toggleUserStatus(selectedUser.uid, newStatus);
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === selectedUser.uid ? { ...u, status: newStatus } : u))
+      );
       toast.success(
         newStatus === 'active'
           ? `Akun ${selectedUser.name} berhasil diaktifkan kembali.`
@@ -275,6 +285,7 @@ export default function Users() {
     setActionLoading(true);
     try {
       await deleteUserAccount(selectedUser.uid);
+      setUsers((prev) => prev.filter((u) => u.uid !== selectedUser.uid));
       toast.success(`Akun user ${selectedUser.name} (@${selectedUser.username}) berhasil dihapus.`);
       setIsDeleteModalOpen(false);
     } catch (err) {
