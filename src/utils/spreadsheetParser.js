@@ -1,0 +1,256 @@
+import * as XLSX from 'xlsx';
+
+/**
+ * Normalisasi nama header agar fleksibel terhadap variasi penamaan di spreadsheet
+ */
+function normalizeHeaderKey(key) {
+  if (!key) return '';
+  const cleaned = String(key).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (cleaned.includes('namabarang') || cleaned.includes('namaitem') || cleaned.includes('itemname') || cleaned.includes('produk') || cleaned === 'nama' || cleaned === 'barang' || cleaned === 'item') {
+    return 'itemName';
+  }
+  if (cleaned.includes('pemilik') || cleaned.includes('owner') || cleaned.includes('penitip')) {
+    return 'owner';
+  }
+  if (cleaned.includes('kategori') || cleaned.includes('category') || cleaned === 'kat') {
+    return 'category';
+  }
+  if (cleaned.includes('hargamodal') || cleaned.includes('modal') || cleaned.includes('costprice') || cleaned.includes('hargabeli') || cleaned.includes('cost')) {
+    return 'costPrice';
+  }
+  if (cleaned.includes('hargajual') || cleaned.includes('sellingprice') || cleaned.includes('jual') || cleaned.includes('harga') || cleaned === 'price') {
+    return 'sellingPrice';
+  }
+  if (cleaned.includes('tanggal') || cleaned.includes('date') || cleaned === 'tgl') {
+    return 'date';
+  }
+  if (cleaned.includes('metodepembayaran') || cleaned.includes('metode') || cleaned.includes('pembayaran') || cleaned.includes('paymentmethod') || cleaned === 'payment') {
+    return 'paymentMethod';
+  }
+  if (cleaned.includes('status') || cleaned.includes('kondisi')) {
+    return 'status';
+  }
+  return key;
+}
+
+/**
+ * Membersihkan format nilai uang/angka
+ */
+export function cleanCurrencyNumber(val) {
+  if (val === undefined || val === null || val === '') return 0;
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+
+  // Hapus prefix Rp, titik, spasi, dll
+  const str = String(val).trim();
+  // Jika formatnya '50.000' atau '50,000' atau 'Rp 50.000'
+  const numericOnly = str.replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(numericOnly);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Format tanggal ke format YYYY-MM-DD
+ */
+export function parseSpreadsheetDate(rawDate, fallbackDate = new Date().toISOString().split('T')[0]) {
+  if (!rawDate) return fallbackDate;
+
+  // Jika berupa nomor serial Excel (misal 45123)
+  if (typeof rawDate === 'number') {
+    try {
+      const parsed = XLSX.SSF.parse_date_code(rawDate);
+      if (parsed) {
+        const y = parsed.y;
+        const m = String(parsed.m).padStart(2, '0');
+        const d = String(parsed.d).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+    } catch {
+      return fallbackDate;
+    }
+  }
+
+  // Jika berupa string tanggal
+  const str = String(rawDate).trim();
+  if (!str) return fallbackDate;
+
+  // Cek apakah sudah format YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return str;
+  }
+
+  // Cek format DD/MM/YYYY atau DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmyMatch) {
+    const day = String(dmyMatch[1]).padStart(2, '0');
+    const month = String(dmyMatch[2]).padStart(2, '0');
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // Coba native Date parse
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0];
+  }
+
+  return fallbackDate;
+}
+
+/**
+ * Parse file spreadsheet (.xlsx, .xls, .csv) menjadi array of objects transaksi yang valid
+ */
+export async function parseSpreadsheetFile(file, fallbackDate) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
+
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          throw new Error('File spreadsheet tidak memiliki sheet.');
+        }
+
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+
+        // Konversi sheet ke JSON raw
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+        if (!rawRows || rawRows.length === 0) {
+          throw new Error('Spreadsheet kosong atau tidak memiliki data baris.');
+        }
+
+        // Transform dan normalisasi data
+        const parsedItems = [];
+
+        rawRows.forEach((row, index) => {
+          const item = {
+            _rowId: index + 1,
+            itemName: '',
+            owner: 'Akbar',
+            category: 'Baju',
+            costPrice: 0,
+            sellingPrice: 0,
+            paymentMethod: 'Transfer Bank',
+            status: 'Terjual',
+            date: fallbackDate || new Date().toISOString().split('T')[0],
+          };
+
+          // Iterasi semua kunci di row
+          Object.keys(row).forEach((key) => {
+            const normalizedKey = normalizeHeaderKey(key);
+            const val = row[key];
+
+            if (normalizedKey === 'itemName') {
+              item.itemName = String(val).trim();
+            } else if (normalizedKey === 'owner') {
+              item.owner = String(val).trim() || 'Akbar';
+            } else if (normalizedKey === 'category') {
+              item.category = String(val).trim() || 'Lainnya';
+            } else if (normalizedKey === 'costPrice') {
+              item.costPrice = cleanCurrencyNumber(val);
+            } else if (normalizedKey === 'sellingPrice') {
+              item.sellingPrice = cleanCurrencyNumber(val);
+            } else if (normalizedKey === 'paymentMethod') {
+              item.paymentMethod = String(val).trim() || 'Transfer Bank';
+            } else if (normalizedKey === 'status') {
+              item.status = String(val).trim() || 'Terjual';
+            } else if (normalizedKey === 'date') {
+              item.date = parseSpreadsheetDate(val, fallbackDate);
+            }
+          });
+
+          // Hanya masukkan jika memiliki nama barang atau harga jual
+          if (item.itemName || item.sellingPrice > 0) {
+            // Jika nama barang kosong berikan default
+            if (!item.itemName) {
+              item.itemName = `Item #${index + 1}`;
+            }
+            parsedItems.push(item);
+          }
+        });
+
+        if (parsedItems.length === 0) {
+          throw new Error('Tidak ditemukan data transaksi yang valid dalam file tersebut.');
+        }
+
+        resolve(parsedItems);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    reader.onerror = (err) => reject(err);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * Buat dan unduh template file Excel untuk impor data penjualan
+ */
+export function downloadSpreadsheetTemplate() {
+  const sampleData = [
+    {
+      'Nama Barang': 'Cardi Abu',
+      'Pemilik': 'Akbar',
+      'Kategori': 'Baju',
+      'Harga Modal': 0,
+      'Harga Jual': 50000,
+      'Tanggal': new Date().toISOString().split('T')[0],
+      'Metode Pembayaran': 'Transfer Bank',
+      'Status': 'Terjual',
+    },
+    {
+      'Nama Barang': 'Celana Jeans Abu',
+      'Pemilik': 'Nesa',
+      'Kategori': 'Celana',
+      'Harga Modal': 0,
+      'Harga Jual': 60000,
+      'Tanggal': new Date().toISOString().split('T')[0],
+      'Metode Pembayaran': 'Transfer Bank',
+      'Status': 'Terjual',
+    },
+    {
+      'Nama Barang': 'Jaket Jeans',
+      'Pemilik': 'Ritza',
+      'Kategori': 'Jaket',
+      'Harga Modal': 0,
+      'Harga Jual': 25000,
+      'Tanggal': new Date().toISOString().split('T')[0],
+      'Metode Pembayaran': 'QRIS',
+      'Status': 'Terjual',
+    },
+    {
+      'Nama Barang': 'Vest Knit',
+      'Pemilik': 'Andin',
+      'Kategori': 'Baju',
+      'Harga Modal': 0,
+      'Harga Jual': 25000,
+      'Tanggal': new Date().toISOString().split('T')[0],
+      'Metode Pembayaran': 'Transfer Bank',
+      'Status': 'Terjual',
+    },
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(sampleData);
+
+  // Set lebar kolom agar rapi saat dibuka di Excel
+  worksheet['!cols'] = [
+    { wch: 25 }, // Nama Barang
+    { wch: 15 }, // Pemilik
+    { wch: 15 }, // Kategori
+    { wch: 15 }, // Harga Modal
+    { wch: 15 }, // Harga Jual
+    { wch: 15 }, // Tanggal
+    { wch: 20 }, // Metode Pembayaran
+    { wch: 15 }, // Status
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Data Penjualan');
+
+  XLSX.writeFile(workbook, 'Fitbay_Template_Impor_Penjualan.xlsx');
+}
