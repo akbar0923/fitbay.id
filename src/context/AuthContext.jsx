@@ -48,6 +48,16 @@ export function AuthProvider({ children }) {
         try {
           // Ambil profil & role dari Firestore
           const profile = await getUserProfile(firebaseUser.uid, username, firebaseUser.email);
+          
+          // Cek apakah akun dinonaktifkan oleh Super Admin
+          if (profile.status === 'inactive') {
+            await signOut(auth);
+            setUser(null);
+            setLoading(false);
+            toast.error('Akun Anda telah dinonaktifkan oleh Admin. Silakan hubungi Admin Fitbay.id.');
+            return;
+          }
+
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
@@ -55,6 +65,7 @@ export function AuthProvider({ children }) {
             name: profile.name || username,
             role: profile.role || 'staff',
             title: profile.title || 'Team Member',
+            status: profile.status || 'active',
           });
         } catch (err) {
           console.error('Error fetching user profile:', err);
@@ -67,6 +78,7 @@ export function AuthProvider({ children }) {
             name: clean === 'muhbar' ? 'Akbar' : clean === 'nessa' ? 'Nessa' : clean === 'admin' ? 'Admin' : username,
             role: isAdminUser ? 'admin' : 'staff',
             title: isAdminUser ? (clean === 'muhbar' ? 'Founder & Admin' : clean === 'nessa' ? 'Co-Founder & Admin' : 'Super Admin') : 'Staff & Host Live',
+            status: 'active',
           });
         }
       } else {
@@ -86,28 +98,40 @@ export function AuthProvider({ children }) {
       const email = usernameToEmail(username);
       const result = await signInWithEmailAndPassword(auth, email, password);
       const cleanUser = emailToUsername(result.user.email);
-      toast.success(`Selamat datang, ${cleanUser}!`);
+      
+      // Verifikasi status akun aktif/nonaktif
+      const profile = await getUserProfile(result.user.uid, cleanUser, result.user.email);
+      if (profile.status === 'inactive') {
+        await signOut(auth);
+        throw new Error('Akun Anda telah dinonaktifkan oleh Admin. Silakan hubungi Admin Fitbay.id.');
+      }
+
+      toast.success(`Selamat datang, ${profile.name || cleanUser}!`);
       return result.user;
     } catch (error) {
       let message = 'Terjadi kesalahan saat login';
       
-      switch (error.code) {
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-          message = 'Username atau password salah';
-          break;
-        case 'auth/too-many-requests':
-          message = 'Terlalu banyak percobaan login. Coba lagi nanti.';
-          break;
-        case 'auth/network-request-failed':
-          message = 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
-          break;
-        case 'auth/invalid-api-key':
-          message = 'Konfigurasi Firebase tidak valid. Hubungi admin.';
-          break;
-        default:
-          message = `Login gagal: ${error.message}`;
+      if (error.message && error.message.includes('dinonaktifkan')) {
+        message = error.message;
+      } else {
+        switch (error.code) {
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+          case 'auth/invalid-credential':
+            message = 'Username atau password salah';
+            break;
+          case 'auth/too-many-requests':
+            message = 'Terlalu banyak percobaan login. Coba lagi nanti.';
+            break;
+          case 'auth/network-request-failed':
+            message = 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
+            break;
+          case 'auth/invalid-api-key':
+            message = 'Konfigurasi Firebase tidak valid. Hubungi admin.';
+            break;
+          default:
+            message = `Login gagal: ${error.message}`;
+        }
       }
       
       toast.error(message);

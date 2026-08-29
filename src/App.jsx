@@ -11,6 +11,7 @@ import SalesData from './pages/SalesData';
 import Owners from './pages/Owners';
 import ProfitSharing from './pages/ProfitSharing';
 import Withdrawals from './pages/Withdrawals';
+import Users from './pages/Users';
 import Reports from './pages/Reports';
 import { Toaster } from 'react-hot-toast';
 
@@ -83,6 +84,14 @@ export default function App() {
                             element={
                               <ProtectedRoute allowedRoles={['admin']}>
                                 <Withdrawals />
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/users"
+                            element={
+                              <ProtectedRoute allowedRoles={['admin']}>
+                                <Users />
                               </ProtectedRoute>
                             }
                           />

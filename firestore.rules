@@ -11,7 +11,7 @@ service cloud.firestore {
     // Helper function: Apakah pengguna adalah Admin
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email in ['muhbar@fitbay.id', 'nessa@fitbay.id', 'admin@admin.id'] ||
+        request.auth.token.email in ['muhbar@fitbay.id', 'nessa@fitbay.id', 'akbar@fitbay.id', 'nesa@fitbay.id', 'admin@admin.id'] ||
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
       );
     }
