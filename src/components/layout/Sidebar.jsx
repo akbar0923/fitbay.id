@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { useSales } from '../../context/SalesContext';
 import { useAuth } from '../../context/AuthContext';
+import logoImg from '../../assets/logo.png';
 
 const navItems = [
   {
@@ -79,7 +80,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-6 border-b dark:border-white/5 border-gray-200">
         <img
-          src="/logo.png"
+          src={logoImg}
           alt="Fitbay.id"
           className="w-10 h-10 object-contain rounded-xl bg-[#F5F3EF] p-0.5 shadow-md"
         />

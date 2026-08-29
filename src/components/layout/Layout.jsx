@@ -3,6 +3,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { useSales } from '../../context/SalesContext';
 import { useAuth } from '../../context/AuthContext';
+import logoImg from '../../assets/logo.png';
 
 const pageTitles = {
   '/': 'Dashboard',
@@ -31,7 +32,7 @@ export default function Layout({ children }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
-                src="/logo.png"
+                src={logoImg}
                 alt="Fitbay.id"
                 className="w-8 h-8 object-contain rounded-lg bg-[#F5F3EF] p-0.5 shadow-sm"
               />

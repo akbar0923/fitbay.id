@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logoImg from '../assets/logo.png';
 
 export default function Login() {
   const { login, isAuthenticated, loading: authLoading } = useAuth();
@@ -61,7 +62,7 @@ export default function Login() {
           {/* Logo */}
           <div className="text-center mb-6">
             <img
-              src="/logo.png"
+              src={logoImg}
               alt="Fitbay.id"
               className="w-20 h-20 object-contain rounded-2xl mx-auto mb-3 shadow-xl bg-[#F5F3EF] p-1.5 ring-2 ring-accent/30"
             />
