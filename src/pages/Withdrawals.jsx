@@ -4,15 +4,13 @@ import { useWithdrawals } from '../context/WithdrawalContext';
 import { useOwners } from '../context/OwnerContext';
 import { formatCurrency, formatDate } from '../utils/formatCurrency';
 import { calculateTotalSharing } from '../utils/calculateProfitSharing';
-import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
+import { PROFIT_SHARING_CONFIG, TEAM_MEMBER_KEYS, getTeamMemberKey } from '../constants/profitSharingConfig';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Input, { Select } from '../components/ui/Input';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import * as XLSX from 'xlsx';
-
-const TEAM_KEYS = ['akbar', 'nesa', 'andin', 'ritza'];
 
 export default function Withdrawals() {
   const { transactions, profitSharingConfig } = useSales();
@@ -27,13 +25,103 @@ export default function Withdrawals() {
   } = useWithdrawals();
   const { owners } = useOwners();
 
-  // Hitung total hak bagi hasil per penerima dari transaksi yang terjual dengan config dinamis
-  const totalEarnedSharing = useMemo(() => {
+  // Hitung total komisi tim standar (5% tim / 10% ops) dari transaksi terjual
+  const totalStandardSharing = useMemo(() => {
     const soldTxs = transactions.filter((tx) => tx.status === 'Terjual');
     return calculateTotalSharing(soldTxs, profitSharingConfig);
   }, [transactions, profitSharingConfig]);
 
-  // Daftar opsi penerima penarikan dari profitSharingConfig dinamis
+  // =========================================================================
+  // Perhitungan Pemisahan Saldo Barang: Tim Internal vs Penitip Eksternal
+  // =========================================================================
+  const { teamPersonalGoods, externalOwnerBalances, externalTotalEarned } = useMemo(() => {
+    // Inisialisasi akumulasi barang pribadi anggota tim (Akbar, Nesa, Andin, Ritza)
+    const teamGoods = {
+      akbar: { earned: 0, totalItems: 0, totalRevenue: 0 },
+      nesa: { earned: 0, totalItems: 0, totalRevenue: 0 },
+      andin: { earned: 0, totalItems: 0, totalRevenue: 0 },
+      ritza: { earned: 0, totalItems: 0, totalRevenue: 0 },
+    };
+
+    // Inisialisasi daftar pemilik eksternal dari master owners
+    const extMap = {};
+    owners.forEach((o) => {
+      const cleanName = (o.name || '').trim();
+      const lower = cleanName.toLowerCase();
+      if (!lower) return;
+
+      // Jika BUKAN anggota tim, masukkan ke daftar pemilik eksternal
+      if (!getTeamMemberKey(lower)) {
+        extMap[lower] = {
+          name: cleanName,
+          phone: o.phone || '-',
+          notes: o.notes || '',
+          totalItems: 0,
+          totalRevenue: 0,
+          earned: 0,
+        };
+      }
+    });
+
+    let extEarnedSum = 0;
+
+    // Iterasi seluruh transaksi yang statusnya Terjual
+    transactions.forEach((tx) => {
+      if (tx.status !== 'Terjual') return;
+
+      const rawOwner = (tx.ownerName || tx.owner || 'Akbar').trim();
+      const lowerOwner = rawOwner.toLowerCase();
+      const teamKey = getTeamMemberKey(lowerOwner);
+      const ownerShare = tx.profitSharing?.pemilikBarang ?? (Number(tx.profit || 0) * 0.7);
+
+      if (teamKey && teamGoods[teamKey]) {
+        // 1. Jika pemilik barang adalah ANGGOTA TIM -> masuk ke saldo barang pribadi tim
+        teamGoods[teamKey].earned += Math.round(ownerShare);
+        teamGoods[teamKey].totalItems += 1;
+        teamGoods[teamKey].totalRevenue += Number(tx.sellingPrice) || 0;
+      } else {
+        // 2. Jika pemilik barang adalah PENITIP EKSTERNAL -> masuk ke saldo pemilik eksternal
+        extEarnedSum += Math.round(ownerShare);
+
+        if (!extMap[lowerOwner]) {
+          extMap[lowerOwner] = {
+            name: rawOwner.charAt(0).toUpperCase() + rawOwner.slice(1),
+            phone: '-',
+            notes: '',
+            totalItems: 0,
+            totalRevenue: 0,
+            earned: 0,
+          };
+        }
+
+        extMap[lowerOwner].earned += Math.round(ownerShare);
+        extMap[lowerOwner].totalItems += 1;
+        extMap[lowerOwner].totalRevenue += Number(tx.sellingPrice) || 0;
+      }
+    });
+
+    // Format list pemilik eksternal dengan penarikan & sisa saldo
+    const extList = Object.values(extMap).map((o) => {
+      const withdrawn = getTotalWithdrawnByOwner(o.name);
+      const remaining = Math.max(0, o.earned - withdrawn);
+      return {
+        ...o,
+        withdrawn,
+        remaining,
+      };
+    }).sort((a, b) => {
+      if (b.remaining !== a.remaining) return b.remaining - a.remaining;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      teamPersonalGoods: teamGoods,
+      externalOwnerBalances: extList,
+      externalTotalEarned: extEarnedSum,
+    };
+  }, [transactions, owners, getTotalWithdrawnByOwner]);
+
+  // Daftar opsi penerima penarikan dari profitSharingConfig
   const recipientOptions = useMemo(() => {
     if (!profitSharingConfig) return [];
     return Object.entries(profitSharingConfig).map(([key, cfg]) => ({
@@ -45,80 +133,6 @@ export default function Withdrawals() {
     }));
   }, [profitSharingConfig]);
 
-  // ==========================================
-  // Perhitungan Saldo per Masing-Masing Pemilik Barang (70%)
-  // ==========================================
-  const individualOwnerBalances = useMemo(() => {
-    const map = {};
-
-    // Inisialisasi dari daftar master owners
-    owners.forEach((o) => {
-      const cleanName = (o.name || '').trim();
-      const lower = cleanName.toLowerCase();
-      if (!lower) return;
-
-      map[lower] = {
-        name: cleanName,
-        phone: o.phone || '-',
-        notes: o.notes || '',
-        totalItems: 0,
-        totalRevenue: 0,
-        earned: 0,
-        isCustomScheme: Boolean(o.isCustomScheme),
-      };
-    });
-
-    // Akumulasi dari seluruh transaksi penjualan yang statusnya Terjual
-    transactions.forEach((tx) => {
-      const rawOwner = (tx.ownerName || tx.owner || 'Akbar').trim();
-      const lower = rawOwner.toLowerCase();
-      if (!lower) return;
-
-      if (!map[lower]) {
-        map[lower] = {
-          name: rawOwner.charAt(0).toUpperCase() + rawOwner.slice(1),
-          phone: '-',
-          notes: '',
-          totalItems: 0,
-          totalRevenue: 0,
-          earned: 0,
-          isCustomScheme: false,
-        };
-      }
-
-      if (tx.status === 'Terjual') {
-        map[lower].totalItems += 1;
-        map[lower].totalRevenue += Number(tx.sellingPrice) || 0;
-
-        // Ambil hak pemilik barang dari transaksi
-        const ownerShare = tx.profitSharing?.pemilikBarang ?? (Number(tx.profit || 0) * 0.7);
-        map[lower].earned += Math.round(ownerShare);
-      }
-    });
-
-    // Gabungkan dengan data penarikan masing-masing pemilik
-    const list = Object.values(map).map((ownerObj) => {
-      const withdrawn = getTotalWithdrawnByOwner(ownerObj.name);
-      const remaining = Math.max(0, ownerObj.earned - withdrawn);
-      const isTeam = TEAM_KEYS.includes(ownerObj.name.toLowerCase());
-
-      return {
-        ...ownerObj,
-        withdrawn,
-        remaining,
-        isTeam,
-      };
-    });
-
-    // Urutkan: yang ada sisa saldo di atas, lalu berdasarkan nama
-    return list.sort((a, b) => {
-      if (b.remaining !== a.remaining) {
-        return b.remaining - a.remaining;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }, [transactions, owners, withdrawals, getTotalWithdrawnByOwner]);
-
   // State Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -128,10 +142,11 @@ export default function Withdrawals() {
 
   // Form State
   const initialForm = {
-    category: 'team', // 'team' | 'owner'
+    category: 'team', // 'team' | 'external_owner'
     recipientKey: 'akbar',
     recipientName: 'Akbar',
     ownerName: '',
+    sourceType: 'all', // 'all' | 'commission' | 'personal_goods'
     date: new Date().toISOString().split('T')[0],
     amount: '',
     roundingAmount: '0',
@@ -149,29 +164,29 @@ export default function Withdrawals() {
 
   // Owner Modal Filter State
   const [ownerSearch, setOwnerSearch] = useState('');
-  const [ownerTabFilter, setOwnerTabFilter] = useState('all'); // 'all' | 'has_balance' | 'zero_balance' | 'team' | 'external'
+  const [ownerTabFilter, setOwnerTabFilter] = useState('all'); // 'all' | 'has_balance' | 'zero_balance'
 
-  // Buka modal penarikan untuk penerima tim
+  // Buka modal penarikan untuk tim
   const handleOpenAddTeam = (teamKey) => {
     setEditingItem(null);
     const rec = recipientOptions.find((r) => r.key === teamKey) || recipientOptions[0];
     setFormData({
       ...initialForm,
-      category: teamKey === 'pemilikBarang' ? 'owner' : 'team',
+      category: teamKey === 'pemilikBarang' ? 'external_owner' : 'team',
       recipientKey: rec.key,
       recipientName: rec.label,
-      ownerName: teamKey === 'pemilikBarang' ? 'Semua Pemilik' : '',
+      ownerName: teamKey === 'pemilikBarang' ? 'Semua Penitip Eksternal' : '',
     });
     setIsModalOpen(true);
   };
 
-  // Buka modal penarikan khusus pemilik barang tertentu
-  const handleOpenAddOwner = (ownerName) => {
+  // Buka modal penarikan untuk pemilik barang eksternal spesifik
+  const handleOpenAddExternalOwner = (ownerName) => {
     setEditingItem(null);
     const cleanName = ownerName.trim();
     setFormData({
       ...initialForm,
-      category: 'owner',
+      category: 'external_owner',
       recipientKey: `owner_${cleanName.toLowerCase()}`,
       recipientName: `Pemilik: ${cleanName}`,
       ownerName: cleanName,
@@ -181,17 +196,18 @@ export default function Withdrawals() {
 
   const handleOpenEdit = (item) => {
     setEditingItem(item);
-    const isOwner =
+    const isExternalOwner =
+      item.recipientCategory === 'external_owner' ||
       item.recipientCategory === 'owner' ||
       item.recipientKey === 'pemilikBarang' ||
-      String(item.recipientKey).startsWith('owner_') ||
-      Boolean(item.ownerName);
+      (Boolean(item.ownerName) && !getTeamMemberKey(item.ownerName));
 
     setFormData({
-      category: isOwner ? 'owner' : 'team',
+      category: isExternalOwner ? 'external_owner' : 'team',
       recipientKey: item.recipientKey,
       recipientName: item.recipientName,
       ownerName: item.ownerName || '',
+      sourceType: item.sourceType || 'all',
       date: item.date,
       amount: String(item.amount),
       roundingAmount: String(item.roundingAmount || 0),
@@ -200,7 +216,7 @@ export default function Withdrawals() {
     setIsModalOpen(true);
   };
 
-  // Handler saat kategori penerima berubah (Tim vs Pemilik Barang)
+  // Handler saat kategori penerima berubah
   const handleCategoryChange = (cat) => {
     if (cat === 'team') {
       const defaultTeam = recipientOptions.find((r) => r.key !== 'pemilikBarang') || recipientOptions[0];
@@ -212,11 +228,10 @@ export default function Withdrawals() {
         ownerName: '',
       }));
     } else {
-      // Default ke pemilik barang pertama yang ada saldo atau pertama di list
-      const defaultOwner = individualOwnerBalances[0]?.name || 'Akbar';
+      const defaultOwner = externalOwnerBalances[0]?.name || 'Atun';
       setFormData((prev) => ({
         ...prev,
-        category: 'owner',
+        category: 'external_owner',
         recipientKey: `owner_${defaultOwner.toLowerCase()}`,
         recipientName: `Pemilik: ${defaultOwner}`,
         ownerName: defaultOwner,
@@ -224,7 +239,6 @@ export default function Withdrawals() {
     }
   };
 
-  // Handler saat memilih spesifik tim
   const handleTeamRecipientChange = (key) => {
     const rec = recipientOptions.find((r) => r.key === key);
     setFormData((prev) => ({
@@ -235,15 +249,14 @@ export default function Withdrawals() {
     }));
   };
 
-  // Handler saat memilih spesifik nama pemilik barang
-  const handleSpecificOwnerChange = (name) => {
+  const handleSpecificExternalOwnerChange = (name) => {
     const cleanName = name.trim();
     if (cleanName === 'ALL') {
       setFormData((prev) => ({
         ...prev,
         recipientKey: 'pemilikBarang',
-        recipientName: 'Pemilik Barang (Umum)',
-        ownerName: 'Semua Pemilik',
+        recipientName: 'Pemilik Barang (Penitip Eksternal)',
+        ownerName: 'Semua Penitip Eksternal',
       }));
     } else {
       setFormData((prev) => ({
@@ -266,7 +279,8 @@ export default function Withdrawals() {
         recipientKey: formData.recipientKey,
         recipientName: formData.recipientName,
         recipientCategory: formData.category,
-        ownerName: formData.category === 'owner' ? formData.ownerName : null,
+        ownerName: formData.category === 'external_owner' ? formData.ownerName : null,
+        sourceType: formData.sourceType,
         date: formData.date,
         amount: amountNum,
         roundingAmount: Number(formData.roundingAmount) || 0,
@@ -307,10 +321,10 @@ export default function Withdrawals() {
   const previewTotalTransferred = previewAmount + previewRounding;
 
   // Hitung saldo tersedia untuk penerima yang sedang dipilih di form modal
-  const currentRecipientRemaining = useMemo(() => {
-    if (formData.category === 'owner') {
-      if (formData.ownerName && formData.ownerName !== 'Semua Pemilik') {
-        const ownerObj = individualOwnerBalances.find(
+  const currentRecipientDetails = useMemo(() => {
+    if (formData.category === 'external_owner') {
+      if (formData.ownerName && formData.ownerName !== 'Semua Penitip Eksternal') {
+        const ownerObj = externalOwnerBalances.find(
           (o) => o.name.toLowerCase() === formData.ownerName.toLowerCase()
         );
         const earned = ownerObj ? ownerObj.earned : 0;
@@ -319,32 +333,85 @@ export default function Withdrawals() {
           editingItem && editingItem.ownerName?.toLowerCase() === formData.ownerName.toLowerCase()
             ? Number(editingItem.amount)
             : 0;
-        return Math.max(0, earned - (withdrawn - editingCompensation));
+        const remaining = Math.max(0, earned - (withdrawn - editingCompensation));
+        return {
+          totalEarned: earned,
+          commission: 0,
+          personalGoods: earned,
+          withdrawn,
+          remaining,
+          label: formData.ownerName,
+        };
       }
-      // General pemilikBarang
-      const earned = totalEarnedSharing.pemilikBarang || 0;
+
+      // General external owners
       const withdrawn = getTotalWithdrawn('pemilikBarang');
       const editingComp = editingItem && editingItem.recipientKey === 'pemilikBarang' ? Number(editingItem.amount) : 0;
-      return Math.max(0, earned - (withdrawn - editingComp));
+      const remaining = Math.max(0, externalTotalEarned - (withdrawn - editingComp));
+      return {
+        totalEarned: externalTotalEarned,
+        commission: 0,
+        personalGoods: externalTotalEarned,
+        withdrawn,
+        remaining,
+        label: 'Penitip Eksternal (Gabungan)',
+      };
     }
 
-    // Team Category
-    const earned = totalEarnedSharing[formData.recipientKey] || 0;
-    const withdrawn = getTotalWithdrawn(formData.recipientKey);
+    // Team Member / Operational
+    const teamKey = formData.recipientKey;
+    if (teamKey === 'operational') {
+      const earned = totalStandardSharing.operational || 0;
+      const withdrawn = getTotalWithdrawn('operational');
+      const editingComp = editingItem && editingItem.recipientKey === 'operational' ? Number(editingItem.amount) : 0;
+      const remaining = Math.max(0, earned - (withdrawn - editingComp));
+      return {
+        totalEarned: earned,
+        commission: earned,
+        personalGoods: 0,
+        withdrawn,
+        remaining,
+        label: 'Operasional',
+      };
+    }
+
+    // Individual Team Members (Akbar, Nesa, Andin, Ritza)
+    const commissionEarned = totalStandardSharing[teamKey] || 0;
+    const personalGoodsEarned = teamPersonalGoods[teamKey]?.earned || 0;
+    const totalCombinedEarned = commissionEarned + personalGoodsEarned;
+
+    const withdrawn = getTotalWithdrawn(teamKey);
     const editingComp =
-      editingItem && editingItem.recipientKey === formData.recipientKey ? Number(editingItem.amount) : 0;
-    return Math.max(0, earned - (withdrawn - editingComp));
+      editingItem && (editingItem.recipientKey === teamKey || editingItem.recipientKey === `owner_${teamKey}`)
+        ? Number(editingItem.amount)
+        : 0;
+
+    const remaining = Math.max(0, totalCombinedEarned - (withdrawn - editingComp));
+    const recObj = recipientOptions.find((r) => r.key === teamKey);
+
+    return {
+      totalEarned: totalCombinedEarned,
+      commission: commissionEarned,
+      personalGoods: personalGoodsEarned,
+      withdrawn,
+      remaining,
+      label: recObj ? recObj.label : teamKey,
+    };
   }, [
     formData.category,
     formData.ownerName,
     formData.recipientKey,
-    individualOwnerBalances,
-    totalEarnedSharing,
+    externalOwnerBalances,
+    externalTotalEarned,
+    totalStandardSharing,
+    teamPersonalGoods,
+    recipientOptions,
     getTotalWithdrawn,
     getTotalWithdrawnByOwner,
     editingItem,
   ]);
 
+  const currentRecipientRemaining = currentRecipientDetails.remaining;
   const previewRemainingAfter = Math.max(0, currentRecipientRemaining - previewAmount);
 
   // Total summary seluruh penarikan
@@ -377,16 +444,12 @@ export default function Withdrawals() {
     });
   }, [withdrawals, filterRecipient, filterDateStart, filterDateEnd, search]);
 
-  // Filter Data untuk Modal Rincian Pemilik Barang
-  const filteredOwnerList = useMemo(() => {
-    return individualOwnerBalances.filter((o) => {
-      // Tab filter
+  // Filter Data untuk Modal Rincian Pemilik Eksternal
+  const filteredExternalOwnerList = useMemo(() => {
+    return externalOwnerBalances.filter((o) => {
       if (ownerTabFilter === 'has_balance' && o.remaining <= 0) return false;
       if (ownerTabFilter === 'zero_balance' && o.remaining > 0) return false;
-      if (ownerTabFilter === 'team' && !o.isTeam) return false;
-      if (ownerTabFilter === 'external' && o.isTeam) return false;
 
-      // Search query
       if (ownerSearch) {
         const q = ownerSearch.toLowerCase();
         return (
@@ -397,14 +460,14 @@ export default function Withdrawals() {
       }
       return true;
     });
-  }, [individualOwnerBalances, ownerTabFilter, ownerSearch]);
+  }, [externalOwnerBalances, ownerTabFilter, ownerSearch]);
 
   // Export Riwayat ke Excel
   const exportToExcel = () => {
     const rows = filteredWithdrawals.map((w) => ({
       Tanggal: formatDate(w.date),
       Penerima: w.recipientName,
-      'Kategori / Pemilik': w.ownerName ? `Pemilik: ${w.ownerName}` : 'Bagi Hasil Tim',
+      'Kategori Penerima': w.ownerName ? `Penitip Eksternal: ${w.ownerName}` : 'Tim Internal Fitbay',
       'Nominal Ditarik (Potong Saldo)': w.amount,
       'Pembulatan Nominal': w.roundingAmount || 0,
       'Total Uang Ditransfer': w.totalTransferred || w.amount + (w.roundingAmount || 0),
@@ -417,12 +480,11 @@ export default function Withdrawals() {
     XLSX.writeFile(wb, `Fitbay_Riwayat_Penarikan_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Export Rincian Saldo Pemilik ke Excel
-  const exportOwnerBalancesToExcel = () => {
-    const rows = individualOwnerBalances.map((o, idx) => ({
+  // Export Rincian Saldo Pemilik Eksternal ke Excel
+  const exportExternalOwnerBalancesToExcel = () => {
+    const rows = externalOwnerBalances.map((o, idx) => ({
       No: idx + 1,
-      'Nama Pemilik': o.name,
-      'Tipe Pemilik': o.isTeam ? 'Tim Internal (Barang Pribadi)' : 'Penitip Eksternal',
+      'Nama Penitip Eksternal': o.name,
       'Barang Terjual': `${o.totalItems} item`,
       'Total Penjualan Barang': o.totalRevenue,
       'Total Hak Pemilik (70%)': o.earned,
@@ -433,8 +495,8 @@ export default function Withdrawals() {
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Saldo_Pemilik_Barang');
-    XLSX.writeFile(wb, `Fitbay_Rincian_Saldo_Pemilik_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Saldo_Penitip_Eksternal');
+    XLSX.writeFile(wb, `Fitbay_Saldo_Penitip_Eksternal_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -444,7 +506,7 @@ export default function Withdrawals() {
         <div>
           <h1 className="text-2xl font-bold dark:text-white text-gray-900">Penarikan Saldo</h1>
           <p className="text-sm dark:text-gray-500 text-gray-500 mt-1">
-            Pencatatan pencairan bagi hasil tim & rincian saldo 70% per masing-masing pemilik barang
+            Pencairan bagi hasil tim (gabungan komisi + barang pribadi) & pelacakan saldo penitip eksternal
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -452,7 +514,7 @@ export default function Withdrawals() {
             <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
             </svg>
-            Rincian per Pemilik Barang ({individualOwnerBalances.length})
+            Rincian Penitip Eksternal ({externalOwnerBalances.length})
           </Button>
           <Button onClick={() => handleOpenAddTeam('akbar')}>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -470,23 +532,52 @@ export default function Withdrawals() {
             Status Saldo Penerima Bagi Hasil
           </h2>
           <span className="text-xs dark:text-gray-500 text-gray-400">
-            Sisa Saldo = Total Hak − Total Ditarik
+            Hak Tim = Komisi 5% + Keuntungan Barang Pribadi (70%)
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {recipientOptions.map((rec) => {
             const isOwnerCard = rec.key === 'pemilikBarang';
-            const earned = totalEarnedSharing[rec.key] || 0;
-            const withdrawn = getTotalWithdrawn(rec.key);
-            const remaining = Math.max(0, earned - withdrawn);
+            const isTeamMember = TEAM_MEMBER_KEYS.includes(rec.key);
+
+            // 1. Jika kartu Pemilik Barang -> Khusus Penitip Eksternal (Non-Tim)
+            let earned = 0;
+            let withdrawn = 0;
+            let remaining = 0;
+            let commissionEarned = 0;
+            let personalGoodsEarned = 0;
+            let personalItemsCount = 0;
+
+            if (isOwnerCard) {
+              earned = externalTotalEarned;
+              withdrawn = getTotalWithdrawn('pemilikBarang');
+              remaining = Math.max(0, earned - withdrawn);
+            } else if (isTeamMember) {
+              // 2. Jika kartu Anggota Tim -> Gabungan Komisi Tim (5%) + Keuntungan Barang Pribadi (70%)
+              commissionEarned = totalStandardSharing[rec.key] || 0;
+              personalGoodsEarned = teamPersonalGoods[rec.key]?.earned || 0;
+              personalItemsCount = teamPersonalGoods[rec.key]?.totalItems || 0;
+              earned = commissionEarned + personalGoodsEarned;
+
+              withdrawn = getTotalWithdrawn(rec.key);
+              remaining = Math.max(0, earned - withdrawn);
+            } else {
+              // 3. Operasional (10%)
+              earned = totalStandardSharing[rec.key] || 0;
+              withdrawn = getTotalWithdrawn(rec.key);
+              remaining = Math.max(0, earned - withdrawn);
+            }
+
             const isZero = remaining <= 0;
 
             return (
               <div
                 key={rec.key}
                 className={`dark:bg-surface-200 bg-white dark:border ${
-                  isOwnerCard ? 'dark:border-emerald-500/30 border-emerald-300 ring-1 ring-emerald-500/20' : 'dark:border-white/5 border-gray-200'
+                  isOwnerCard
+                    ? 'dark:border-emerald-500/30 border-emerald-300 ring-1 ring-emerald-500/20'
+                    : 'dark:border-white/5 border-gray-200'
                 } rounded-2xl p-5 shadow-sm relative overflow-hidden transition-all hover:border-accent/40 flex flex-col justify-between`}
               >
                 {/* Top bar with percentage color */}
@@ -504,13 +595,21 @@ export default function Withdrawals() {
                           <h3 className="text-sm font-bold dark:text-white text-gray-900">{rec.label}</h3>
                           {isOwnerCard && (
                             <span className="text-[10px] bg-emerald-500/20 text-emerald-400 font-bold px-1.5 py-0.5 rounded">
-                              {individualOwnerBalances.length} Orang
+                              {externalOwnerBalances.length} Penitip
+                            </span>
+                          )}
+                          {isTeamMember && personalItemsCount > 0 && (
+                            <span className="text-[10px] bg-blue-500/20 text-blue-400 font-bold px-1.5 py-0.5 rounded" title="Ada barang pribadi yang terjual">
+                              +Barang Pribadi
                             </span>
                           )}
                         </div>
                         <p className="text-[11px] font-medium" style={{ color: rec.color }}>
-                          {PROFIT_SHARING_CONFIG[rec.key]?.percentage || 70}% dari keuntungan
-                          {isOwnerCard ? ' (Total Seluruh Pemilik)' : ''}
+                          {isOwnerCard
+                            ? '70% dari keuntungan barang titipan luar'
+                            : isTeamMember
+                            ? `5% Komisi Tim ${personalGoodsEarned > 0 ? '+ Keuntungan Barang Pribadi' : ''}`
+                            : '10% dari keuntungan toko'}
                         </p>
                       </div>
                     </div>
@@ -526,15 +625,36 @@ export default function Withdrawals() {
                   {/* Sisa Saldo Tersedia */}
                   <div className="p-3.5 rounded-xl dark:bg-white/[0.02] bg-gray-50 border dark:border-white/5 border-gray-100 my-2">
                     <p className="text-[10px] dark:text-gray-500 text-gray-400 uppercase font-semibold">
-                      Sisa Saldo Tersedia {isOwnerCard ? '(Gabungan)' : ''}
+                      Sisa Saldo Tersedia {isOwnerCard ? '(Penitip Luar)' : isTeamMember ? '(Total Gabungan)' : ''}
                     </p>
                     <p className="text-xl font-extrabold text-emerald-400 tracking-tight mt-0.5">
                       {formatCurrency(remaining)}
                     </p>
                   </div>
 
-                  {/* Detail Hak & Sudah Ditarik */}
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-2">
+                  {/* Breakdown Sumber Hak untuk Anggota Tim */}
+                  {isTeamMember ? (
+                    <div className="space-y-1 p-2 rounded-xl dark:bg-surface-300 bg-gray-100/70 text-xs my-2">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="dark:text-gray-400 text-gray-600 flex items-center gap-1">
+                          <span>👥</span> Komisi Tim (5%):
+                        </span>
+                        <span className="font-semibold dark:text-white text-gray-900">{formatCurrency(commissionEarned)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="dark:text-gray-400 text-gray-600 flex items-center gap-1">
+                          <span>📦</span> Barang Pribadi (70%):
+                        </span>
+                        <span className="font-semibold text-accent">
+                          {formatCurrency(personalGoodsEarned)}
+                          {personalItemsCount > 0 && <span className="text-[10px] text-gray-400 ml-1">({personalItemsCount} pcs)</span>}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Detail Total Hak & Sudah Ditarik */}
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                     <div>
                       <p className="text-[10px] dark:text-gray-500 text-gray-400">Total Hak Didapat:</p>
                       <p className="font-semibold dark:text-gray-200 text-gray-800">{formatCurrency(earned)}</p>
@@ -559,7 +679,7 @@ export default function Withdrawals() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
                         </svg>
-                        <span>Lihat Rincian per Pemilik ({individualOwnerBalances.length})</span>
+                        <span>Lihat Rincian Penitip Luar ({externalOwnerBalances.length})</span>
                       </button>
                       <button
                         type="button"
@@ -567,7 +687,7 @@ export default function Withdrawals() {
                         className="w-full py-1.5 px-3 rounded-xl text-[11px] font-medium dark:bg-white/5 bg-gray-100 hover:dark:bg-white/10 hover:bg-gray-200 dark:text-gray-400 text-gray-600 transition-all flex items-center justify-center gap-1"
                       >
                         <span>💸</span>
-                        <span>Tarik Saldo Pemilik (Pilih Nama)</span>
+                        <span>Tarik Saldo Penitip Eksternal</span>
                       </button>
                     </>
                   ) : (
@@ -635,13 +755,15 @@ export default function Withdrawals() {
                 focus:outline-none focus:ring-2 focus:ring-accent/50 cursor-pointer"
             >
               <option value="">Semua Penerima</option>
-              <optgroup label="Bagi Hasil Tim">
-                {recipientOptions.map((r) => (
-                  <option key={r.key} value={r.key}>{r.label}</option>
-                ))}
+              <optgroup label="Bagi Hasil Tim Internal">
+                {recipientOptions
+                  .filter((r) => r.key !== 'pemilikBarang')
+                  .map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
               </optgroup>
-              <optgroup label="Pemilik Barang Spesifik">
-                {individualOwnerBalances.map((o) => (
+              <optgroup label="Penitip Eksternal (Luar)">
+                {externalOwnerBalances.map((o) => (
                   <option key={o.name} value={o.name}>Pemilik: {o.name}</option>
                 ))}
               </optgroup>
@@ -716,11 +838,11 @@ export default function Withdrawals() {
               </thead>
               <tbody className="divide-y dark:divide-white/5 divide-gray-100">
                 {filteredWithdrawals.map((w) => {
-                  const isOwnerWithdrawal =
+                  const isExternalOwner =
+                    w.recipientCategory === 'external_owner' ||
                     w.recipientCategory === 'owner' ||
                     w.recipientKey === 'pemilikBarang' ||
-                    String(w.recipientKey).startsWith('owner_') ||
-                    Boolean(w.ownerName);
+                    (Boolean(w.ownerName) && !getTeamMemberKey(w.ownerName));
 
                   const rounding = Number(w.roundingAmount) || 0;
                   const totalTf = Number(w.totalTransferred) || Number(w.amount) + rounding;
@@ -731,16 +853,16 @@ export default function Withdrawals() {
                         {formatDate(w.date)}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
-                        {isOwnerWithdrawal ? (
+                        {isExternalOwner ? (
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                            <span>👤</span>
-                            <span>{w.ownerName ? `Pemilik: ${w.ownerName}` : w.recipientName}</span>
-                            <span className="text-[10px] px-1 rounded bg-emerald-500/20 text-emerald-300 font-normal">70% Barang</span>
+                            <span>📦</span>
+                            <span>{w.ownerName ? `Penitip Luar: ${w.ownerName}` : w.recipientName}</span>
                           </div>
                         ) : (
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/20">
-                            <span>⚙️</span>
+                            <span>👤</span>
                             <span>{w.recipientName}</span>
+                            <span className="text-[10px] px-1 rounded bg-purple-500/20 text-purple-200 font-normal">Tim Internal</span>
                           </div>
                         )}
                       </td>
@@ -795,42 +917,45 @@ export default function Withdrawals() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL RINCIAN SALDO PER PEMILIK BARANG    */}
-      {/* ========================================== */}
+      {/* ==================================================== */}
+      {/* MODAL RINCIAN SALDO PENITIP EKSTERNAL (NON-TIM ONLY) */}
+      {/* ==================================================== */}
       <Modal
         isOpen={isOwnerDetailOpen}
         onClose={() => setIsOwnerDetailOpen(false)}
-        title="Rincian Saldo per Pemilik Barang (70% Hak Pemilik)"
+        title="Rincian Saldo Pemilik Barang (Penitip Eksternal)"
         size="xl"
       >
         <div className="space-y-4">
-          <p className="text-xs dark:text-gray-400 text-gray-600">
-            Daftar saldo dan akumulasi hak kepemilikan barang dari seluruh penitip barang preloved dan anggota tim.
-          </p>
+          <div className="p-3 rounded-xl dark:bg-blue-500/10 bg-blue-50 border dark:border-blue-500/20 border-blue-200 text-xs dark:text-blue-300 text-blue-800 flex items-start gap-2">
+            <span className="text-base leading-none">ℹ️</span>
+            <p>
+              Daftar ini khusus merinci <strong>penitip barang eksternal (luar)</strong>. Hak keuntungan barang milik anggota tim (<strong>Akbar, Nesa, Andin, Ritza</strong>) otomatis langsung digabung ke kartu individual mereka masing-masing di halaman utama.
+            </p>
+          </div>
 
           {/* Mini Summary Cards inside Modal */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-xl dark:bg-white/[0.03] bg-gray-50 border dark:border-white/5 border-gray-200">
-              <p className="text-[10px] dark:text-gray-500 text-gray-400 uppercase font-semibold">Total Pemilik</p>
-              <p className="text-base font-bold dark:text-white text-gray-900">{individualOwnerBalances.length} Orang</p>
+              <p className="text-[10px] dark:text-gray-500 text-gray-400 uppercase font-semibold">Total Penitip Luar</p>
+              <p className="text-base font-bold dark:text-white text-gray-900">{externalOwnerBalances.length} Orang/Toko</p>
             </div>
             <div className="p-3 rounded-xl dark:bg-white/[0.03] bg-gray-50 border dark:border-white/5 border-gray-200">
               <p className="text-[10px] dark:text-gray-500 text-gray-400 uppercase font-semibold">Total Hak (70%)</p>
               <p className="text-base font-bold text-accent">
-                {formatCurrency(individualOwnerBalances.reduce((sum, o) => sum + o.earned, 0))}
+                {formatCurrency(externalTotalEarned)}
               </p>
             </div>
             <div className="p-3 rounded-xl dark:bg-white/[0.03] bg-gray-50 border dark:border-white/5 border-gray-200">
               <p className="text-[10px] dark:text-gray-500 text-gray-400 uppercase font-semibold">Sudah Dicairkan</p>
               <p className="text-base font-bold text-purple">
-                {formatCurrency(individualOwnerBalances.reduce((sum, o) => sum + o.withdrawn, 0))}
+                {formatCurrency(externalOwnerBalances.reduce((sum, o) => sum + o.withdrawn, 0))}
               </p>
             </div>
             <div className="p-3 rounded-xl dark:bg-emerald-500/10 bg-emerald-50 border dark:border-emerald-500/20 border-emerald-200">
               <p className="text-[10px] text-emerald-500 uppercase font-semibold">Sisa Saldo Tersedia</p>
               <p className="text-base font-extrabold text-emerald-400">
-                {formatCurrency(individualOwnerBalances.reduce((sum, o) => sum + o.remaining, 0))}
+                {formatCurrency(externalOwnerBalances.reduce((sum, o) => sum + o.remaining, 0))}
               </p>
             </div>
           </div>
@@ -843,7 +968,7 @@ export default function Withdrawals() {
               </svg>
               <input
                 type="text"
-                placeholder="Cari nama pemilik barang..."
+                placeholder="Cari nama penitip eksternal..."
                 value={ownerSearch}
                 onChange={(e) => setOwnerSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 rounded-xl text-xs
@@ -858,8 +983,6 @@ export default function Withdrawals() {
                 { id: 'all', label: 'Semua' },
                 { id: 'has_balance', label: 'Ada Saldo' },
                 { id: 'zero_balance', label: 'Saldo Rp 0' },
-                { id: 'team', label: 'Tim Internal' },
-                { id: 'external', label: 'Penitip Luar' },
               ].map((tab) => (
                 <button
                   type="button"
@@ -877,13 +1000,13 @@ export default function Withdrawals() {
             </div>
           </div>
 
-          {/* Table Daftar Pemilik */}
+          {/* Table Daftar Pemilik Eksternal */}
           <div className="max-h-80 overflow-y-auto rounded-xl border dark:border-white/5 border-gray-200">
             <table className="w-full text-xs">
               <thead className="sticky top-0 dark:bg-surface-300 bg-gray-100 border-b dark:border-white/5 border-gray-200 z-10">
                 <tr>
                   <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">No</th>
-                  <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Nama Pemilik</th>
+                  <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Nama Penitip</th>
                   <th className="px-3 py-2.5 text-center font-semibold dark:text-gray-400 text-gray-600">Barang Terjual</th>
                   <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Total Hak (70%)</th>
                   <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Sudah Ditarik</th>
@@ -892,37 +1015,24 @@ export default function Withdrawals() {
                 </tr>
               </thead>
               <tbody className="divide-y dark:divide-white/5 divide-gray-100">
-                {filteredOwnerList.length === 0 ? (
+                {filteredExternalOwnerList.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
-                      Tidak ditemukan data pemilik yang sesuai.
+                      Tidak ditemukan data penitip eksternal yang sesuai.
                     </td>
                   </tr>
                 ) : (
-                  filteredOwnerList.map((owner, idx) => {
+                  filteredExternalOwnerList.map((owner, idx) => {
                     const hasBalance = owner.remaining > 0;
                     return (
                       <tr key={owner.name} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors">
                         <td className="px-3 py-2.5 dark:text-gray-500 text-gray-400">{idx + 1}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center text-[10px]">
+                            <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[10px]">
                               {owner.name.charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold dark:text-white text-gray-900">{owner.name}</span>
-                                {owner.isTeam ? (
-                                  <span className="text-[9px] px-1 py-0.2 rounded bg-blue-500/15 text-blue-400 font-semibold">
-                                    Tim Internal
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] px-1 py-0.2 rounded bg-purple-500/15 text-purple-300 font-semibold">
-                                    Penitip Luar
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+                            <span className="font-bold dark:text-white text-gray-900">{owner.name}</span>
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-center dark:text-gray-300 text-gray-700 whitespace-nowrap">
@@ -944,7 +1054,7 @@ export default function Withdrawals() {
                             type="button"
                             onClick={() => {
                               setIsOwnerDetailOpen(false);
-                              handleOpenAddOwner(owner.name);
+                              handleOpenAddExternalOwner(owner.name);
                             }}
                             disabled={!hasBalance}
                             className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1 ${
@@ -968,11 +1078,11 @@ export default function Withdrawals() {
 
           {/* Modal Footer Actions */}
           <div className="flex items-center justify-between pt-3 border-t dark:border-white/5 border-gray-200">
-            <Button variant="secondary" size="sm" onClick={exportOwnerBalancesToExcel}>
+            <Button variant="secondary" size="sm" onClick={exportExternalOwnerBalancesToExcel}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12 12 16.5m0 0L16.5 12M12 16.5V3" />
               </svg>
-              Export Saldo Pemilik (.xlsx)
+              Export Saldo Penitip (.xlsx)
             </Button>
             <Button variant="ghost" type="button" onClick={() => setIsOwnerDetailOpen(false)}>
               Tutup
@@ -987,14 +1097,14 @@ export default function Withdrawals() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={editingItem ? 'Edit Penarikan Saldo' : 'Catat Penarikan Saldo Baru'}
+        title={editingItem ? 'Edit Penarikan Saldo' : 'Catat Penarikan Saldo'}
         size="md"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Toggle Kategori: Tim Internal vs Pemilik Barang */}
+          {/* Toggle Kategori: Tim Internal vs Pemilik Barang Eksternal */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500">
-              Kategori Penarikan
+              Kategori Penerima
             </label>
             <div className="grid grid-cols-2 gap-2 p-1 rounded-xl dark:bg-surface-300 bg-gray-100">
               <button
@@ -1006,20 +1116,20 @@ export default function Withdrawals() {
                     : 'dark:text-gray-400 text-gray-600 hover:dark:text-white'
                 }`}
               >
-                <span>⚙️</span>
+                <span>👥</span>
                 <span>Bagi Hasil Tim Internal</span>
               </button>
               <button
                 type="button"
-                onClick={() => handleCategoryChange('owner')}
+                onClick={() => handleCategoryChange('external_owner')}
                 className={`py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                  formData.category === 'owner'
+                  formData.category === 'external_owner'
                     ? 'bg-emerald-500 text-dark-800 shadow-sm'
                     : 'dark:text-gray-400 text-gray-600 hover:dark:text-white'
                 }`}
               >
-                <span>👤</span>
-                <span>Pemilik Barang (70%)</span>
+                <span>📦</span>
+                <span>Penitip Eksternal (Luar)</span>
               </button>
             </div>
           </div>
@@ -1053,21 +1163,21 @@ export default function Withdrawals() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500">
-                  Nama Pemilik Barang
+                  Nama Penitip Eksternal
                 </label>
                 <select
                   value={formData.ownerName || ''}
-                  onChange={(e) => handleSpecificOwnerChange(e.target.value)}
+                  onChange={(e) => handleSpecificExternalOwnerChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl text-sm dark:bg-surface-300 bg-white 
                     dark:text-white text-gray-900 dark:border-white/10 border-gray-300 border
                     focus:outline-none focus:ring-2 focus:ring-accent/50 cursor-pointer"
                 >
-                  {individualOwnerBalances.map((o) => (
+                  {externalOwnerBalances.map((o) => (
                     <option key={o.name} value={o.name}>
                       👤 {o.name} (Sisa: {formatCurrency(o.remaining)})
                     </option>
                   ))}
-                  <option value="ALL">📦 Semua Pemilik (Global)</option>
+                  <option value="ALL">📦 Semua Penitip Luar (Global)</option>
                 </select>
               </div>
 
@@ -1081,17 +1191,29 @@ export default function Withdrawals() {
             </div>
           )}
 
-          {/* Info Saldo Tersedia Saat Ini */}
-          <div className="p-3.5 rounded-xl dark:bg-emerald-500/10 bg-emerald-50 border dark:border-emerald-500/20 border-emerald-200 flex justify-between items-center text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="text-base">💰</span>
-              <span className="dark:text-gray-300 text-gray-700 font-medium">
-                Sisa Saldo Tersedia untuk {formData.category === 'owner' ? formData.ownerName || 'Pemilik' : formData.recipientName}:
+          {/* Info Breakdown Saldo untuk Penerima Terpilih */}
+          <div className="p-3.5 rounded-xl dark:bg-emerald-500/10 bg-emerald-50 border dark:border-emerald-500/20 border-emerald-200 space-y-1 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="font-semibold dark:text-white text-gray-900">
+                Sisa Saldo {currentRecipientDetails.label}:
+              </span>
+              <span className="font-extrabold text-sm text-emerald-400">
+                {formatCurrency(currentRecipientRemaining)}
               </span>
             </div>
-            <span className="font-extrabold text-sm text-emerald-400">
-              {formatCurrency(currentRecipientRemaining)}
-            </span>
+
+            {formData.category === 'team' && currentRecipientDetails.personalGoods > 0 ? (
+              <div className="pt-1.5 border-t dark:border-emerald-500/20 border-emerald-200/60 grid grid-cols-2 gap-2 text-[11px] dark:text-gray-300 text-gray-700">
+                <div>
+                  <span className="text-gray-400">Komisi Tim (5%): </span>
+                  <span className="font-semibold">{formatCurrency(currentRecipientDetails.commission)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Barang Pribadi (70%): </span>
+                  <span className="font-semibold text-accent">{formatCurrency(currentRecipientDetails.personalGoods)}</span>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Nominal Penarikan Asli */}
@@ -1171,7 +1293,7 @@ export default function Withdrawals() {
           {/* Catatan */}
           <Input
             label="Catatan / Info Rekening Penerima"
-            placeholder="contoh: Transfer via BCA 12345678 a.n Ritza"
+            placeholder="contoh: Transfer via BCA 12345678 a.n Penerima"
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
           />

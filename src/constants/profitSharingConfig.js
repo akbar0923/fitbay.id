@@ -39,6 +39,18 @@ export const PROFIT_SHARING_CONFIG = {
   },
 };
 
+export const TEAM_MEMBER_KEYS = ['akbar', 'nesa', 'andin', 'ritza'];
+
+export function getTeamMemberKey(nameOrUsername) {
+  if (!nameOrUsername) return null;
+  const clean = String(nameOrUsername).trim().toLowerCase();
+  if (clean === 'akbar' || clean === 'muhbar') return 'akbar';
+  if (clean === 'nesa' || clean === 'nessa') return 'nesa';
+  if (clean === 'andin') return 'andin';
+  if (clean === 'ritza') return 'ritza';
+  return null;
+}
+
 // Kategori barang
 export const CATEGORIES = [
   'Sepatu',

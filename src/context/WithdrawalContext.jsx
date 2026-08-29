@@ -97,10 +97,14 @@ export function WithdrawalProvider({ children }) {
     return withdrawals.reduce((sum, w) => {
       const wOwner = (w.ownerName || '').trim().toLowerCase();
       const wKey = (w.recipientKey || '').trim().toLowerCase();
-      const wName = (w.recipientName || '').trim().toLowerCase();
 
       // Cek apakah penarikan ini ditujukan untuk ownerName ini
-      if (wOwner === cleanName || wKey === `owner_${cleanName}` || (wKey.startsWith('owner_') && wKey.includes(cleanName))) {
+      if (
+        wOwner === cleanName ||
+        wKey === `owner_${cleanName}` ||
+        wKey === cleanName ||
+        (wKey.startsWith('owner_') && wKey.includes(cleanName))
+      ) {
         return sum + (Number(w.amount) || 0);
       }
       return sum;
@@ -114,15 +118,47 @@ export function WithdrawalProvider({ children }) {
    */
   const getTotalWithdrawn = (recipientKey) => {
     const key = (recipientKey || '').toLowerCase();
+    const teamKeys = ['akbar', 'nesa', 'andin', 'ritza'];
     
-    // Jika 'pemilikBarang', gabungkan seluruh penarikan kategori pemilik barang (baik per nama maupun global)
+    // Jika untuk anggota tim, gabungkan seluruh penarikan akun tersebut (baik dari komisi tim maupun barang pribadi)
+    if (teamKeys.includes(key)) {
+      return withdrawals.reduce((sum, w) => {
+        const wKey = (w.recipientKey || '').toLowerCase();
+        const wOwner = (w.ownerName || '').toLowerCase();
+        if (
+          wKey === key ||
+          wKey === `owner_${key}` ||
+          wOwner === key ||
+          (key === 'nesa' && (wKey === 'nessa' || wOwner === 'nessa' || wKey === 'owner_nessa')) ||
+          (key === 'akbar' && (wKey === 'muhbar' || wOwner === 'muhbar' || wKey === 'owner_muhbar'))
+        ) {
+          return sum + (Number(w.amount) || 0);
+        }
+        return sum;
+      }, 0);
+    }
+
+    // Jika 'pemilikBarang', hanya gabungkan penarikan untuk pemilik barang EKSTERNAL (non-tim)
     if (key === 'pemilikbarang') {
       return withdrawals.reduce((sum, w) => {
+        const wKey = (w.recipientKey || '').toLowerCase();
+        const wOwner = (w.ownerName || '').toLowerCase();
+        const isTeam =
+          teamKeys.includes(wKey) ||
+          teamKeys.some((tk) => wKey === `owner_${tk}`) ||
+          teamKeys.includes(wOwner) ||
+          wOwner === 'nessa' ||
+          wOwner === 'muhbar';
+
+        if (isTeam || wKey === 'operational') {
+          return sum;
+        }
+
         const isOwnerCategory = 
-          w.recipientKey === 'pemilikBarang' || 
-          (w.recipientKey || '').startsWith('owner_') || 
+          wKey === 'pemilikbarang' || 
+          wKey.startsWith('owner_') || 
           w.recipientCategory === 'owner' ||
-          (w.ownerName && w.ownerName.length > 0);
+          (w.ownerName && w.ownerName.length > 0 && w.ownerName !== 'Semua Pemilik');
         
         if (isOwnerCategory) {
           return sum + (Number(w.amount) || 0);
