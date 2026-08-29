@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useSales } from '../../context/SalesContext';
 import { useAuth } from '../../context/AuthContext';
+import ProfileModal from '../profile/ProfileModal';
 import logoImg from '../../assets/logo.png';
 
 const navItems = [
@@ -88,6 +90,7 @@ const navItems = [
 export default function Sidebar() {
   const { theme, toggleTheme } = useSales();
   const { user, logout, isSuperAdmin, isAdmin, isLimitedAdmin } = useAuth();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const location = useLocation();
 
   const visibleNavItems = navItems.filter((item) => {
@@ -107,15 +110,15 @@ export default function Sidebar() {
         <img
           src={logoImg}
           alt="Fitbay.id"
-          className="w-10 h-10 object-contain rounded-xl bg-[#F5F3EF] p-0.5 shadow-md"
+          className="w-10 h-10 object-contain rounded-xl bg-[#F5F3EF] p-1 shadow-sm"
         />
         <div>
-          <h1 className="text-lg font-bold dark:text-white text-gray-900 tracking-tight">Fitbay.id</h1>
-          <p className="text-xs dark:text-gray-500 text-gray-400">Preloved Fashion</p>
+          <h1 className="text-base font-bold dark:text-white text-gray-900 tracking-tight">Fitbay.id</h1>
+          <p className="text-[11px] dark:text-gray-400 text-gray-500 font-medium">Finance & Stock Tracker</p>
         </div>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation Links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleNavItems.map((item) => {
           const isActive = location.pathname === item.path;
@@ -123,25 +126,19 @@ export default function Sidebar() {
             <NavLink
               key={item.path}
               to={item.path}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 group relative
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
                 ${isActive
-                  ? 'dark:bg-accent/10 bg-accent/10 dark:text-accent text-accent-dark glow-accent'
+                  ? 'dark:bg-accent/15 bg-accent/10 dark:text-accent text-accent-dark font-semibold shadow-sm'
                   : 'dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900 dark:hover:bg-white/5 hover:bg-gray-100'
                 }`}
             >
-              {isActive && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-accent rounded-r-full" />
-              )}
-              <span className={`transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
+              <div className={`transition-transform duration-200 ${isActive ? 'scale-110' : ''}`}>
                 {item.icon}
-              </span>
-              <span>{item.label}</span>
+              </div>
+              <span className="flex-1 truncate">{item.label}</span>
               {item.badge && (
-                <span className={`ml-auto text-[9px] uppercase px-1.5 py-0.5 rounded font-semibold
-                  ${item.superAdminOnly 
-                    ? 'dark:bg-emerald-500/10 bg-emerald-50 text-emerald-500 border border-emerald-500/20' 
-                    : 'dark:bg-blue-500/10 bg-blue-50 text-blue-500 border border-blue-500/20'}`}
-                >
+                <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full uppercase
+                  bg-purple/15 text-purple border border-purple/20">
                   {item.badge}
                 </span>
               )}
@@ -155,10 +152,15 @@ export default function Sidebar() {
 
       {/* User Info, Theme Toggle & Logout */}
       <div className="px-4 py-4 border-t dark:border-white/5 border-gray-200 space-y-2">
-        {/* Logged in User Profile with Role */}
+        {/* Logged in User Profile with Role (Clickable to Edit Profile & Password) */}
         {user && (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl dark:bg-white/[0.03] bg-gray-50 border dark:border-white/5 border-gray-200">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs uppercase
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl dark:bg-white/[0.03] bg-gray-50 border dark:border-white/5 border-gray-200 hover:border-accent/40 dark:hover:bg-white/[0.07] hover:bg-gray-100/80 transition-all duration-200 group cursor-pointer"
+            title="Klik untuk Edit Profil & Ganti Password"
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs uppercase transition-transform group-hover:scale-105
               ${isSuperAdmin 
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
                 : isLimitedAdmin 
@@ -169,7 +171,7 @@ export default function Sidebar() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-semibold dark:text-white text-gray-900 truncate capitalize">
+                <p className="text-sm font-semibold dark:text-white text-gray-900 truncate capitalize group-hover:text-accent transition-colors">
                   {user.name || user.username}
                 </p>
               </div>
@@ -177,16 +179,22 @@ export default function Sidebar() {
                 {user.title || (isSuperAdmin ? 'Super Admin' : isLimitedAdmin ? 'Admin' : 'Staff')}
               </p>
             </div>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase
-              ${isSuperAdmin 
-                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
-                : isLimitedAdmin 
-                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' 
-                : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'}`}
-            >
-              {isSuperAdmin ? 'Super Admin' : user.role}
-            </span>
-          </div>
+            <div className="flex flex-col items-end gap-0.5">
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase
+                ${isSuperAdmin 
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                  : isLimitedAdmin 
+                  ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' 
+                  : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'}`}
+              >
+                {isSuperAdmin ? 'Super Admin' : user.role}
+              </span>
+              <span className="text-[9px] text-accent opacity-75 group-hover:opacity-100 flex items-center gap-0.5 font-medium">
+                <span>⚙️</span>
+                <span>Ubah</span>
+              </span>
+            </div>
+          </button>
         )}
 
         {/* Theme Toggle */}
@@ -225,6 +233,12 @@ export default function Sidebar() {
           <p className="text-[10px] dark:text-gray-600 text-gray-400">© 2026 Fitbay.id</p>
         </div>
       </div>
+
+      {/* Profile & Password Modal */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
     </aside>
   );
 }

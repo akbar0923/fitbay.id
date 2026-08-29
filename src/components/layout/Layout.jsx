@@ -1,23 +1,28 @@
+import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
+import ProfileModal from '../profile/ProfileModal';
 import { useSales } from '../../context/SalesContext';
 import { useAuth } from '../../context/AuthContext';
 import logoImg from '../../assets/logo.png';
 
 const pageTitles = {
   '/': 'Dashboard',
+  '/inventory': 'Data Barang & Inventaris',
   '/sales': 'Data Penjualan',
   '/owners': 'Kelola Pemilik Barang',
   '/profit-sharing': 'Pembagian Hasil',
   '/withdrawals': 'Penarikan Saldo',
+  '/users': 'Kelola Pengguna',
   '/reports': 'Laporan',
 };
 
 export default function Layout({ children }) {
   const location = useLocation();
   const { theme, toggleTheme } = useSales();
-  const { logout } = useAuth();
+  const { user, logout, isSuperAdmin, isLimitedAdmin } = useAuth();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const pageTitle = pageTitles[location.pathname] || 'Fitbay.id';
 
   return (
@@ -41,7 +46,26 @@ export default function Layout({ children }) {
                 <p className="text-[10px] dark:text-gray-500 text-gray-400">Fitbay.id</p>
               </div>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
+              {/* Profile & Password Button */}
+              {user && (
+                <button
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs uppercase shadow-sm
+                    ${
+                      isSuperAdmin
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : isLimitedAdmin
+                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                        : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                    }`}
+                  title="Profil & Ganti Password"
+                >
+                  {user.username?.charAt(0) || '?'}
+                </button>
+              )}
+
+              {/* Theme Toggle */}
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-xl dark:bg-white/5 bg-gray-100 dark:text-gray-400 text-gray-600 
@@ -57,6 +81,8 @@ export default function Layout({ children }) {
                   </svg>
                 )}
               </button>
+
+              {/* Logout Button */}
               <button
                 onClick={logout}
                 className="p-2 rounded-xl text-red-400 dark:hover:bg-red-500/10 hover:bg-red-50 transition-all duration-200"
@@ -77,6 +103,12 @@ export default function Layout({ children }) {
       </main>
 
       <MobileNav />
+
+      {/* Profile & Password Modal */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
     </div>
   );
 }

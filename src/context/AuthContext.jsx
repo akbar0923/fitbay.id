@@ -3,9 +3,12 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
 } from 'firebase/auth';
 import { auth } from '../firebase/firebaseConfig';
-import { getUserProfile } from '../firebase/userService';
+import { getUserProfile, updateUserProfileData } from '../firebase/userService';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
@@ -140,6 +143,56 @@ export function AuthProvider({ children }) {
   };
 
   /**
+   * Mengupdate profil mandiri (Nama Lengkap & Jabatan)
+   */
+  const updateMyProfile = async ({ name, title }) => {
+    if (!user?.uid) throw new Error('User belum login');
+    const updatePayload = {
+      name: name.trim(),
+      title: title.trim(),
+    };
+
+    await updateUserProfileData(user.uid, updatePayload);
+    setUser((prev) => (prev ? { ...prev, ...updatePayload } : prev));
+    toast.success('Profil Anda berhasil diperbarui!');
+  };
+
+  /**
+   * Mengganti password akun sendiri dengan verifikasi password lama
+   */
+  const changeMyPassword = async ({ currentPassword, newPassword }) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser || !currentUser.email) {
+      throw new Error('Sesi login tidak ditemukan. Silakan login ulang.');
+    }
+
+    if (newPassword.length < 6) {
+      throw new Error('Password baru minimal harus 6 karakter.');
+    }
+
+    try {
+      // 1. Re-autentikasi dengan password lama
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // 2. Update ke password baru
+      await updatePassword(currentUser, newPassword);
+      toast.success('Password akun Anda berhasil diperbarui!');
+    } catch (err) {
+      let errorMsg = 'Gagal mengganti password.';
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        errorMsg = 'Password saat ini yang Anda masukkan salah.';
+      } else if (err.code === 'auth/weak-password') {
+        errorMsg = 'Password baru terlalu lemah. Gunakan minimal 6 karakter.';
+      } else if (err.code === 'auth/requires-recent-login') {
+        errorMsg = 'Demi keamanan, silakan logout dan login ulang sebelum mengganti password.';
+      }
+      toast.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+  };
+
+  /**
    * Logout
    */
   const logout = async () => {
@@ -167,6 +220,8 @@ export function AuthProvider({ children }) {
     loading,
     login,
     logout,
+    updateMyProfile,
+    changeMyPassword,
     isAuthenticated: !!user,
     isSuperAdmin,
     isAdmin,
