@@ -196,17 +196,28 @@ export default function Users() {
 
     setActionLoading(true);
     try {
+      const defaultTitle =
+        editFormData.role === USER_ROLES.SUPER_ADMIN
+          ? 'Super Admin'
+          : editFormData.role === USER_ROLES.ADMIN
+          ? 'Admin Operasional'
+          : 'Staff & Host Live';
+
       const updatePayload = {
         name: editFormData.name.trim(),
         role: editFormData.role,
-        title: editFormData.title.trim() || (editFormData.role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : editFormData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
+        title: editFormData.title.trim() || defaultTitle,
         status: editFormData.status,
       };
 
       await updateUserProfileData(selectedUser.uid, updatePayload);
 
       setUsers((prev) =>
-        prev.map((u) => (u.uid === selectedUser.uid ? { ...u, ...updatePayload } : u))
+        prev.map((u) =>
+          u.uid === selectedUser.uid || (u.username && u.username === selectedUser.username)
+            ? { ...u, ...updatePayload }
+            : u
+        )
       );
 
       toast.success(`Data user ${selectedUser.name} berhasil diperbarui!`);
@@ -528,8 +539,8 @@ export default function Users() {
                 </tr>
               ) : (
                 filteredUsers.map((u) => {
-                  const isSuper = u.role === 'superadmin' || ['muhbar', 'nessa', 'akbar', 'nesa', 'admin'].includes(u.username?.toLowerCase());
-                  const isAdminRole = !isSuper && u.role === 'admin';
+                  const isSuper = u.role === 'superadmin';
+                  const isAdminRole = u.role === 'admin';
                   const isActive = (u.status || 'active') === 'active';
                   const isCurrentLoggedUser = u.uid === currentUser?.uid;
 

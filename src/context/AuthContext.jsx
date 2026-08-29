@@ -154,7 +154,7 @@ export function AuthProvider({ children }) {
 
   const isSuperAdmin =
     user?.role === 'superadmin' ||
-    ['muhbar', 'nessa', 'akbar', 'nesa', 'admin'].includes(user?.username?.toLowerCase());
+    (!user?.role && ['muhbar', 'akbar'].includes(user?.username?.toLowerCase()));
 
   const isAdmin =
     isSuperAdmin ||

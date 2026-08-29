@@ -124,36 +124,25 @@ export function saveLocalUsers(users) {
 export async function getUserProfile(uid, username, email) {
   const docRef = doc(db, COLLECTION_NAME, uid);
   const cleanUsername = (username || '').toLowerCase();
-  const isSuperAdminUser = SUPER_ADMIN_USERNAMES.includes(cleanUsername);
 
   try {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       const data = docSnap.data();
-      if (isSuperAdminUser && data.role !== USER_ROLES.SUPER_ADMIN && data.role !== 'admin') {
-        const updatedData = {
-          ...data,
-          role: USER_ROLES.SUPER_ADMIN,
-          title: data.title?.includes('Admin') ? data.title : (cleanUsername === 'muhbar' ? 'Founder & Super Admin' : 'Co-Founder & Super Admin'),
-          status: data.status || 'active',
-          updatedAt: new Date().toISOString(),
-        };
-        await updateDoc(docRef, updatedData);
-        return { uid, ...updatedData };
-      }
       return { uid, status: data.status || 'active', ...data };
     }
   } catch (err) {
     console.warn('Could not read user profile doc from Firestore, using default profile:', err);
   }
 
-  // Auto-provisioning profil awal berdasarkan username
+  // Auto-provisioning profil awal hanya jika dokumen belum pernah ada di database
+  const isFounder = ['muhbar', 'akbar'].includes(cleanUsername);
   const defaultProfile = DEFAULT_USER_PROFILES[cleanUsername] || {
     name: username || 'User',
     username: cleanUsername,
-    role: isSuperAdminUser ? USER_ROLES.SUPER_ADMIN : USER_ROLES.STAFF,
-    title: isSuperAdminUser ? 'Super Admin' : 'Staff Fitbay',
+    role: isFounder ? USER_ROLES.SUPER_ADMIN : USER_ROLES.STAFF,
+    title: isFounder ? 'Founder & Super Admin' : 'Staff Fitbay',
     status: 'active',
   };
 
