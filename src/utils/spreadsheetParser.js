@@ -1,5 +1,16 @@
 import * as XLSX from 'xlsx';
 
+const KNOWN_OWNERS = ['akbar', 'nesa', 'nessa', 'ritza', 'andin', 'atun', 'bilah'];
+
+/**
+ * Cek apakah sebuah string merupakan nama pemilik yang dikenali
+ */
+function isKnownOwner(str) {
+  if (!str) return false;
+  const clean = String(str).trim().toLowerCase();
+  return KNOWN_OWNERS.includes(clean);
+}
+
 /**
  * Normalisasi nama header agar fleksibel terhadap variasi penamaan di spreadsheet
  */
@@ -7,7 +18,7 @@ function normalizeHeaderKey(key) {
   if (!key) return '';
   const cleaned = String(key).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
-  if (cleaned.includes('namabarang') || cleaned.includes('namaitem') || cleaned.includes('itemname') || cleaned.includes('produk') || cleaned === 'nama' || cleaned === 'barang' || cleaned === 'item') {
+  if (cleaned.includes('namabarang') || cleaned.includes('namaitem') || cleaned.includes('itemname') || cleaned.includes('produk')) {
     return 'itemName';
   }
   if (cleaned.includes('pemilik') || cleaned.includes('owner') || cleaned.includes('penitip')) {
@@ -31,6 +42,9 @@ function normalizeHeaderKey(key) {
   if (cleaned.includes('status') || cleaned.includes('kondisi')) {
     return 'status';
   }
+  if (cleaned === 'barang' || cleaned === 'nama' || cleaned === 'item') {
+    return 'barangOrOwner';
+  }
   return key;
 }
 
@@ -41,9 +55,8 @@ export function cleanCurrencyNumber(val) {
   if (val === undefined || val === null || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
 
-  // Hapus prefix Rp, titik, spasi, dll
+  // Hapus prefix Rp, titik, spasi, koma
   const str = String(val).trim();
-  // Jika formatnya '50.000' atau '50,000' atau 'Rp 50.000'
   const numericOnly = str.replace(/[^0-9.-]/g, '');
   const parsed = parseFloat(numericOnly);
   return isNaN(parsed) ? 0 : parsed;
@@ -131,9 +144,16 @@ export function parsePastedText(rawText, fallbackDate = new Date().toISOString()
     const cols = line.split(delimiter).map(c => c.trim()).filter(c => c !== '');
     if (cols.length === 0) return;
 
-    // Abaikan baris jika merupakan baris header
+    // Abaikan baris jika merupakan baris header (misal "barang	harga", "pemilik	harga", "no	nama")
     const firstColClean = cols[0].toLowerCase();
-    if (firstColClean === 'no' || firstColClean === 'pemilik' || firstColClean === 'nama barang' || firstColClean === 'owner') {
+    const secondColClean = cols[1] ? cols[1].toLowerCase() : '';
+    if (
+      firstColClean === 'no' ||
+      firstColClean === 'pemilik' ||
+      firstColClean === 'nama barang' ||
+      firstColClean === 'owner' ||
+      (firstColClean === 'barang' && (secondColClean === 'harga' || secondColClean === 'harga jual' || secondColClean === 'price'))
+    ) {
       return;
     }
 
@@ -147,18 +167,21 @@ export function parsePastedText(rawText, fallbackDate = new Date().toISOString()
     let date = fallbackDate;
 
     if (cols.length === 1) {
-      // Hanya harga atau satu string
       sellingPrice = cleanCurrencyNumber(cols[0]);
     } else if (cols.length === 2) {
-      // Pola: [Pemilik, Harga] atau [Nama Barang, Harga]
+      // Pola: [Pemilik/Barang, Harga]
       const val1 = cols[0];
       const val2 = cols[1];
 
       const price2 = cleanCurrencyNumber(val2);
       if (price2 > 0) {
-        owner = capitalizeOwner(val1);
-        itemName = `Barang ${owner}`;
         sellingPrice = price2;
+        if (isKnownOwner(val1)) {
+          owner = capitalizeOwner(val1);
+          itemName = `Barang ${owner}`;
+        } else {
+          itemName = val1;
+        }
       } else {
         itemName = val1;
         sellingPrice = cleanCurrencyNumber(val2);
@@ -183,10 +206,9 @@ export function parsePastedText(rawText, fallbackDate = new Date().toISOString()
       category = cols[2] || 'Baju';
       sellingPrice = cleanCurrencyNumber(cols[3]);
     } else if (cols.length >= 5) {
-      // Pola: [No, Pemilik, Nama Barang, Kategori, Harga Jual] atau [Pemilik, Nama Barang, Kategori, Modal, Jual]
       let offset = 0;
       if (!isNaN(cols[0])) {
-        offset = 1; // Ada nomor urut di awal
+        offset = 1;
       }
       owner = capitalizeOwner(cols[offset] || 'Akbar');
       itemName = cols[offset + 1] || `Barang ${owner}`;
@@ -200,7 +222,7 @@ export function parsePastedText(rawText, fallbackDate = new Date().toISOString()
       }
     }
 
-    if (sellingPrice > 0 || itemName) {
+    if (sellingPrice > 0) {
       parsedItems.push({
         _rowId: index + 1,
         itemName,
@@ -273,8 +295,16 @@ export async function parseSpreadsheetFile(file, fallbackDate) {
               item.itemName = String(val).trim();
             } else if (normalizedKey === 'owner') {
               item.owner = capitalizeOwner(String(val).trim());
+            } else if (normalizedKey === 'barangOrOwner') {
+              const strVal = String(val).trim();
+              if (isKnownOwner(strVal)) {
+                item.owner = capitalizeOwner(strVal);
+                item.itemName = `Barang ${item.owner}`;
+              } else {
+                item.itemName = strVal;
+              }
             } else if (normalizedKey === 'category') {
-              item.category = String(val).trim() || 'Lainnya';
+              item.category = String(val).trim() || 'Baju';
             } else if (normalizedKey === 'costPrice') {
               item.costPrice = cleanCurrencyNumber(val);
             } else if (normalizedKey === 'sellingPrice') {
@@ -288,9 +318,8 @@ export async function parseSpreadsheetFile(file, fallbackDate) {
             }
           });
 
-          // Hanya masukkan jika memiliki nama barang atau harga jual
-          if (item.itemName || item.sellingPrice > 0) {
-            // Jika nama barang kosong berikan default
+          // Jika harga jual valid
+          if (item.sellingPrice > 0) {
             if (!item.itemName) {
               item.itemName = `Barang ${item.owner}`;
             }
