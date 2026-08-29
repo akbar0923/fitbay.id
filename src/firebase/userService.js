@@ -14,8 +14,9 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
+  setPersistence,
+  inMemoryPersistence,
 } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
 import { db, auth, firebaseConfig } from './firebaseConfig';
 import { DEFAULT_USER_PROFILES, USER_ROLES } from '../constants/profitSharingConfig';
 
@@ -99,14 +100,12 @@ export async function getUserProfile(uid, username, email) {
 /**
  * Membuat User Baru langsung oleh Super Admin tanpa mengganti sesi login yang aktif.
  * 
- * Strategi:
- * 1. Buat secondary Firebase App instance (terisolasi dari primary app)
- * 2. Buat akun baru di Firebase Auth via secondary Auth
- * 3. Tulis profil ke Firestore via secondary Firestore 
- *    (secondary auth sudah terautentikasi sebagai user baru, 
- *     sehingga rule `allow create: if isAuthenticated()` terpenuhi)
- * 4. Sign out dari secondary Auth & hapus secondary app
- * 5. Primary app tetap login sebagai Super Admin — sesi aman!
+ * Strategi aman:
+ * 1. Buat secondary Firebase App (terisolasi, in-memory persistence only)
+ * 2. Buat akun baru di Firebase Auth via secondary Auth → ambil UID
+ * 3. Sign out & hapus secondary app (bersihkan total)
+ * 4. Tulis profil user ke Firestore memakai PRIMARY db (admin masih login)
+ * 5. Sesi Super Admin 100% tidak terganggu
  */
 export async function createUserByAdmin({
   name,
@@ -127,20 +126,47 @@ export async function createUserByAdmin({
 
   const email = usernameToInternalEmail(cleanUsername);
 
-  // Inisialisasi Firebase App sekunder dengan nama unik
-  const secondaryAppName = `SecondaryAuthApp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  // Step 1: Buat secondary Firebase App dengan nama unik
+  const secondaryAppName = `_TempAuth_${Date.now()}`;
   let secondaryApp = null;
+  let newUid = null;
 
   try {
     secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
     const secondaryAuth = getAuth(secondaryApp);
-    const secondaryDb = getFirestore(secondaryApp);
 
-    // 1. Buat user baru di Firebase Authentication via secondary auth
+    // Gunakan in-memory persistence agar TIDAK menyimpan ke IndexedDB
+    // dan tidak mengganggu session primary app sama sekali
+    await setPersistence(secondaryAuth, inMemoryPersistence);
+
+    // Step 2: Buat akun baru di Firebase Auth
     const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-    const newUid = userCredential.user.uid;
+    newUid = userCredential.user.uid;
 
-    // 2. Siapkan data profil user
+    // Step 3: Sign out dari secondary auth segera
+    await firebaseSignOut(secondaryAuth);
+
+  } catch (error) {
+    console.error('createUserByAdmin Auth error:', error);
+    let errorMsg = error.message;
+    if (error.code === 'auth/email-already-in-use') {
+      errorMsg = `Username "${cleanUsername}" sudah terdaftar di Firebase Auth. Gunakan username lain.`;
+    } else if (error.code === 'auth/weak-password') {
+      errorMsg = 'Password terlalu lemah. Gunakan minimal 6 karakter.';
+    } else if (error.code === 'auth/invalid-email') {
+      errorMsg = 'Format email dari username tidak valid.';
+    }
+    throw new Error(errorMsg);
+  } finally {
+    // Hapus secondary app sepenuhnya
+    if (secondaryApp) {
+      try { await deleteApp(secondaryApp); } catch (_) { /* ignore */ }
+    }
+  }
+
+  // Step 4: Tulis profil user ke Firestore memakai PRIMARY db
+  // (Admin masih login di primary app, sehingga rule isAuthenticated() terpenuhi)
+  try {
     const userProfileData = {
       name: name.trim(),
       username: cleanUsername,
@@ -153,37 +179,16 @@ export async function createUserByAdmin({
       updatedAt: new Date().toISOString(),
     };
 
-    // 3. Tulis profil ke Firestore memakai secondary Firestore
-    //    (secondary auth sudah login sebagai user baru → rule isAuthenticated() terpenuhi)
-    const userDocRef = doc(secondaryDb, COLLECTION_NAME, newUid);
+    const userDocRef = doc(db, COLLECTION_NAME, newUid);
     await setDoc(userDocRef, userProfileData);
 
-    // 4. Sign out dari secondary auth sebelum menghapus secondary app
-    await firebaseSignOut(secondaryAuth);
-
-    return {
-      uid: newUid,
-      ...userProfileData,
-    };
-  } catch (error) {
-    console.error('createUserByAdmin error:', error);
-    let errorMsg = error.message;
-    if (error.code === 'auth/email-already-in-use') {
-      errorMsg = `Username "${cleanUsername}" sudah terdaftar. Silakan gunakan username lain.`;
-    } else if (error.code === 'auth/weak-password') {
-      errorMsg = 'Password terlalu lemah. Gunakan minimal 6 karakter.';
-    } else if (error.code === 'auth/invalid-email') {
-      errorMsg = 'Format email dari username tidak valid.';
-    }
-    throw new Error(errorMsg);
-  } finally {
-    if (secondaryApp) {
-      try {
-        await deleteApp(secondaryApp);
-      } catch (err) {
-        // Ignore — secondary app cleanup is best-effort
-      }
-    }
+    return { uid: newUid, ...userProfileData };
+  } catch (firestoreError) {
+    console.error('createUserByAdmin Firestore write error:', firestoreError);
+    throw new Error(
+      'Akun berhasil dibuat di Firebase Auth, tetapi gagal menyimpan profil ke database. ' +
+      'Coba minta user login sekali agar profilnya otomatis terbuat.'
+    );
   }
 }
 
