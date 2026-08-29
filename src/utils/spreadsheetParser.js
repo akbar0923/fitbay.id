@@ -49,16 +49,28 @@ function normalizeHeaderKey(key) {
 }
 
 /**
- * Membersihkan format nilai uang/angka
+ * Membersihkan format nilai uang/angka (Mendukung format Rupiah Rp 10.000, 10.000, 10000)
  */
 export function cleanCurrencyNumber(val) {
   if (val === undefined || val === null || val === '') return 0;
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
 
-  // Hapus prefix Rp, titik, spasi, koma
-  const str = String(val).trim();
-  const numericOnly = str.replace(/[^0-9.-]/g, '');
-  const parsed = parseFloat(numericOnly);
+  let str = String(val).trim();
+  if (!str) return 0;
+
+  // Jika formatnya memiliki koma sebagai desimal (contoh: 10.000,50)
+  if (str.includes(',') && str.includes('.')) {
+    // Hapus titik pemisah ribuan, ganti koma dengan titik desimal
+    str = str.replace(/\./g, '').replace(',', '.');
+    const numericOnly = str.replace(/[^0-9.-]/g, '');
+    const parsed = parseFloat(numericOnly);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+
+  // Jika format standar Indonesia (Rp 10.000 / 10.000 / 100.000)
+  // Titik adalah pemisah ribuan, jadi hapus titik dan semua karakter non-angka
+  const numericOnly = str.replace(/[^0-9-]/g, '');
+  const parsed = parseInt(numericOnly, 10);
   return isNaN(parsed) ? 0 : parsed;
 }
 

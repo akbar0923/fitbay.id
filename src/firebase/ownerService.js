@@ -43,7 +43,7 @@ function saveLocalOwners(owners) {
 }
 
 /**
- * Mengambil semua data pemilik barang dari Firestore (dengan fallback localStorage)
+ * Mengambil semua data pemilik barang dari Firestore (dengan deduplikasi dan fallback localStorage)
  * @returns {Promise<Array>}
  */
 export async function getOwners() {
@@ -68,15 +68,52 @@ export async function getOwners() {
       return seededOwners;
     }
 
-    const remoteOwners = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
+    const allRemoteDocs = snapshot.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
     }));
-    saveLocalOwners(remoteOwners);
-    return remoteOwners;
+
+    // Deduplikasi pemilik berdasarkan nama (lowercase)
+    const seenNames = new Set();
+    const uniqueOwners = [];
+    const duplicateIdsToDelete = [];
+
+    for (const owner of allRemoteDocs) {
+      const normalizedName = (owner.name || '').trim().toLowerCase();
+      if (!normalizedName) continue;
+
+      if (!seenNames.has(normalizedName)) {
+        seenNames.add(normalizedName);
+        uniqueOwners.push(owner);
+      } else {
+        // Tandai ID duplikat untuk dihapus dari Firestore agar bersih
+        duplicateIdsToDelete.push(owner.id);
+      }
+    }
+
+    // Bersihkan dokumen duplikat dari Firestore di latar belakang
+    if (duplicateIdsToDelete.length > 0) {
+      duplicateIdsToDelete.forEach(async (dupId) => {
+        try {
+          await deleteDoc(doc(db, COLLECTION_NAME, dupId));
+        } catch (e) {
+          console.warn('Error cleaning up duplicate owner doc:', e);
+        }
+      });
+    }
+
+    saveLocalOwners(uniqueOwners);
+    return uniqueOwners;
   } catch (err) {
     console.warn('Could not fetch owners from Firestore, using local fallback:', err);
-    return getLocalOwners();
+    const local = getLocalOwners();
+    const seen = new Set();
+    return local.filter((o) => {
+      const k = (o.name || '').trim().toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   }
 }
 
