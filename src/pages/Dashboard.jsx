@@ -162,25 +162,14 @@ export default function Dashboard() {
           delay={0}
         />
         
-        {isAdmin ? (
-          <SummaryCard
-            title="Keuntungan Bulan Ini"
-            value={monthProfit}
-            subtitle={`Total: ${formatCurrency(totalProfit)}`}
-            icon="📈"
-            color="purple"
-            delay={100}
-          />
-        ) : (
-          <SummaryCard
-            title="Via Transfer Bank"
-            value={paymentStats.transferTotal}
-            subtitle={`${paymentStats.transferCount} transaksi`}
-            icon="🏦"
-            color="blue"
-            delay={100}
-          />
-        )}
+        <SummaryCard
+          title="Keuntungan Bulan Ini"
+          value={monthProfit}
+          subtitle={`Total: ${formatCurrency(totalProfit)}`}
+          icon="📈"
+          color="purple"
+          delay={100}
+        />
 
         <SummaryCard
           title="Transaksi Terjual"
@@ -191,72 +180,59 @@ export default function Dashboard() {
           delay={200}
         />
 
-        {isAdmin ? (
-          <SummaryCard
-            title="Rata-rata Keuntungan"
-            value={monthTxCount > 0 ? Math.round(monthProfit / monthTxCount) : 0}
-            subtitle="Per transaksi bulan ini"
-            icon="⚡"
-            color="amber"
-            delay={300}
-          />
-        ) : (
-          <SummaryCard
-            title="Via QRIS"
-            value={paymentStats.qrisTotal}
-            subtitle={`${paymentStats.qrisCount} transaksi`}
-            icon="📱"
-            color="purple"
-            delay={300}
-          />
-        )}
+        <SummaryCard
+          title="Rata-rata Keuntungan"
+          value={monthTxCount > 0 ? Math.round(monthProfit / monthTxCount) : 0}
+          subtitle="Per transaksi bulan ini"
+          icon="⚡"
+          color="amber"
+          delay={300}
+        />
       </div>
 
       {/* Sales Chart */}
       <SalesChart filteredTransactions={filteredTransactions} />
 
-      {/* Admin: Profit Sharing 6 Recipients Summary */}
-      {isAdmin ? (
-        <ProfitSharingSummary filteredTransactions={filteredTransactions} />
-      ) : (
-        /* Staff: Rekap Metode Pembayaran */
-        <div className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-5 animate-slide-up">
-          <h3 className="text-sm font-semibold dark:text-white text-gray-900 mb-4">
-            Rekap Pembayaran Periode Ini
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl dark:bg-blue-500/10 bg-blue-50 border dark:border-blue-500/20 border-blue-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-xl">
-                  🏦
-                </div>
-                <div>
-                  <p className="text-xs text-blue-400 font-medium uppercase">Transfer Bank</p>
-                  <p className="text-lg font-bold dark:text-white text-gray-900">{formatCurrency(paymentStats.transferTotal)}</p>
-                </div>
-              </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full dark:bg-white/10 bg-white text-blue-400">
-                {paymentStats.transferCount} item
-              </span>
-            </div>
+      {/* Profit Sharing & Sisa Saldo Summary (Dapat dilihat oleh semua role) */}
+      <ProfitSharingSummary filteredTransactions={filteredTransactions} />
 
-            <div className="p-4 rounded-xl dark:bg-purple/10 bg-purple/10 border dark:border-purple/20 border-purple/30 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-purple/20 text-purple flex items-center justify-center text-xl">
-                  📱
-                </div>
-                <div>
-                  <p className="text-xs text-purple font-medium uppercase">QRIS</p>
-                  <p className="text-lg font-bold dark:text-white text-gray-900">{formatCurrency(paymentStats.qrisTotal)}</p>
-                </div>
+      {/* Rekap Metode Pembayaran */}
+      <div className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-5 animate-slide-up">
+        <h3 className="text-sm font-semibold dark:text-white text-gray-900 mb-4">
+          Rekap Pembayaran Periode Ini
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl dark:bg-blue-500/10 bg-blue-50 border dark:border-blue-500/20 border-blue-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-xl">
+                🏦
               </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full dark:bg-white/10 bg-white text-purple">
-                {paymentStats.qrisCount} item
-              </span>
+              <div>
+                <p className="text-xs text-blue-400 font-medium uppercase">Transfer Bank</p>
+                <p className="text-lg font-bold dark:text-white text-gray-900">{formatCurrency(paymentStats.transferTotal)}</p>
+              </div>
             </div>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full dark:bg-white/10 bg-white text-blue-400">
+              {paymentStats.transferCount} item
+            </span>
+          </div>
+
+          <div className="p-4 rounded-xl dark:bg-purple/10 bg-purple/10 border dark:border-purple/20 border-purple/30 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple/20 text-purple flex items-center justify-center text-xl">
+                📱
+              </div>
+              <div>
+                <p className="text-xs text-purple font-medium uppercase">QRIS</p>
+                <p className="text-lg font-bold dark:text-white text-gray-900">{formatCurrency(paymentStats.qrisTotal)}</p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full dark:bg-white/10 bg-white text-purple">
+              {paymentStats.qrisCount} item
+            </span>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

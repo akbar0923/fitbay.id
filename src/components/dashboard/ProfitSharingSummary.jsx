@@ -3,11 +3,13 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { calculateTotalSharing } from '../../utils/calculateProfitSharing';
 import { useWithdrawals } from '../../context/WithdrawalContext';
 import { useSales } from '../../context/SalesContext';
+import { useAuth } from '../../context/AuthContext';
 import { Link } from 'react-router-dom';
 
 export default function ProfitSharingSummary({ filteredTransactions }) {
   const { getTotalWithdrawn } = useWithdrawals();
   const { profitSharingConfig } = useSales();
+  const { isSuperAdmin } = useAuth();
 
   const totals = useMemo(() => {
     return calculateTotalSharing(filteredTransactions || [], profitSharingConfig);
@@ -20,13 +22,23 @@ export default function ProfitSharingSummary({ filteredTransactions }) {
           <h3 className="text-sm font-semibold dark:text-white text-gray-900">Pembagian Hasil & Sisa Saldo</h3>
           <p className="text-xs dark:text-gray-500 text-gray-400">Rincian hak keuntungan dan sisa saldo yang belum ditarik</p>
         </div>
-        <Link
-          to="/withdrawals"
-          className="text-xs text-accent hover:text-accent-light font-medium flex items-center gap-1 transition-colors"
-        >
-          <span>Kelola Penarikan</span>
-          <span>→</span>
-        </Link>
+        {isSuperAdmin ? (
+          <Link
+            to="/withdrawals"
+            className="text-xs text-accent hover:text-accent-light font-medium flex items-center gap-1 transition-colors"
+          >
+            <span>Kelola Penarikan</span>
+            <span>→</span>
+          </Link>
+        ) : (
+          <Link
+            to="/profit-sharing"
+            className="text-xs text-accent hover:text-accent-light font-medium flex items-center gap-1 transition-colors"
+          >
+            <span>Lihat Rincian</span>
+            <span>→</span>
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

@@ -72,11 +72,11 @@ export default function App() {
                             }
                           />
 
-                          {/* Halaman Khusus Super Admin (Founder & Co-Founder) */}
+                          {/* Halaman Pembagian Hasil (Bisa dilihat semua role, hanya Super Admin yang bisa edit persentase) */}
                           <Route
                             path="/profit-sharing"
                             element={
-                              <ProtectedRoute allowedRoles={['superadmin']}>
+                              <ProtectedRoute allowedRoles={['superadmin', 'admin', 'staff']}>
                                 <ProfitSharing />
                               </ProtectedRoute>
                             }
