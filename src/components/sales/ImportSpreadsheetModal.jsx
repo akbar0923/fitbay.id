@@ -3,12 +3,14 @@ import Modal from '../ui/Modal';
 import Button from '../ui/Button';
 import { INITIAL_SPREADSHEET_DATA } from '../../constants/initialSalesData';
 import { formatCurrency } from '../../utils/formatCurrency';
-import { parseSpreadsheetFile, downloadSpreadsheetTemplate } from '../../utils/spreadsheetParser';
+import { parseSpreadsheetFile, parsePastedText, downloadSpreadsheetTemplate } from '../../utils/spreadsheetParser';
 import toast from 'react-hot-toast';
 
 export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch }) {
+  const [activeTab, setActiveTab] = useState('upload'); // 'upload' | 'paste'
   const [items, setItems] = useState([]);
   const [fileInfo, setFileInfo] = useState(null);
+  const [pastedText, setPastedText] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(false);
@@ -24,6 +26,7 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
     if (loading) return;
     setItems([]);
     setFileInfo(null);
+    setPastedText('');
     setProgress(0);
     onClose();
   };
@@ -86,6 +89,31 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
     }
   };
 
+  // Process pasted text
+  const handleProcessPastedText = () => {
+    if (!pastedText.trim()) {
+      toast.error('Silakan tempel teks data spreadsheet terlebih dahulu.');
+      return;
+    }
+
+    try {
+      setParsing(true);
+      const parsed = parsePastedText(pastedText, date);
+      setItems(parsed);
+      setFileInfo({
+        name: 'Data Teks yang Ditempel (Copy-Paste)',
+        size: `${parsed.length} transaksi`,
+        isDefault: false,
+      });
+      toast.success(`Berhasil memproses ${parsed.length} transaksi dari teks!`);
+    } catch (err) {
+      console.error('Error parsing pasted text:', err);
+      toast.error(err.message || 'Format teks tidak dapat dibaca.');
+    } finally {
+      setParsing(false);
+    }
+  };
+
   // File input change handler
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -128,7 +156,7 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
   // Execute batch import to Firestore
   const handleImport = async () => {
     if (items.length === 0) {
-      toast.error('Tidak ada data transaksi untuk diimpor. Unggah file terlebih dahulu.');
+      toast.error('Tidak ada data transaksi untuk diimpor.');
       return;
     }
 
@@ -178,7 +206,7 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
               </span>
             </div>
             <p className="text-xs dark:text-gray-500 text-gray-500">
-              Unggah file Excel/CSV atau gunakan data bawaan template
+              Unggah file Excel/CSV, tempel teks, atau gunakan data bawaan template
             </p>
           </div>
 
@@ -220,52 +248,106 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
           </div>
         </div>
 
-        {/* Upload Dropzone */}
-        {items.length === 0 ? (
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
-              isDragOver
-                ? 'border-accent bg-accent/5 scale-[0.99]'
-                : 'dark:border-white/10 border-gray-300 dark:bg-white/[0.01] bg-gray-50/50 hover:dark:border-accent/50 hover:border-accent/50 hover:bg-accent/[0.02]'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx, .xls, .csv"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-
-            <div className="w-14 h-14 rounded-2xl dark:bg-surface-300 bg-emerald-50 text-accent flex items-center justify-center shadow-inner">
-              {parsing ? (
-                <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12-3-3m0 0-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                </svg>
-              )}
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold dark:text-white text-gray-800">
-                {parsing ? 'Membaca data spreadsheet...' : 'Klik untuk memilih file atau Drag & Drop di sini'}
-              </p>
-              <p className="text-xs dark:text-gray-400 text-gray-500 mt-1">
-                Mendukung format Microsoft Excel (.xlsx, .xls) dan CSV (.csv)
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1 text-[11px] dark:text-gray-500 text-gray-400">
-              <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-surface-300">.XLSX</span>
-              <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-surface-300">.XLS</span>
-              <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-surface-300">.CSV</span>
-            </div>
+        {/* Method Tabs if no items loaded */}
+        {items.length === 0 && (
+          <div className="flex items-center gap-2 border-b dark:border-white/10 border-gray-200 pb-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('upload')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === 'upload'
+                  ? 'bg-accent text-dark-800 shadow-sm'
+                  : 'dark:text-gray-400 text-gray-600 hover:dark:text-white hover:text-gray-900'
+              }`}
+            >
+              📁 Unggah File (.xlsx / .csv)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('paste')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === 'paste'
+                  ? 'bg-accent text-dark-800 shadow-sm'
+                  : 'dark:text-gray-400 text-gray-600 hover:dark:text-white hover:text-gray-900'
+              }`}
+            >
+              📋 Tempel / Paste Teks Langsung
+            </button>
           </div>
+        )}
+
+        {/* Upload Dropzone / Paste Area */}
+        {items.length === 0 ? (
+          activeTab === 'upload' ? (
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
+                isDragOver
+                  ? 'border-accent bg-accent/5 scale-[0.99]'
+                  : 'dark:border-white/10 border-gray-300 dark:bg-white/[0.01] bg-gray-50/50 hover:dark:border-accent/50 hover:border-accent/50 hover:bg-accent/[0.02]'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              <div className="w-14 h-14 rounded-2xl dark:bg-surface-300 bg-emerald-50 text-accent flex items-center justify-center shadow-inner">
+                {parsing ? (
+                  <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12-3-3m0 0-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                  </svg>
+                )}
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold dark:text-white text-gray-800">
+                  {parsing ? 'Membaca data spreadsheet...' : 'Klik untuk memilih file atau Drag & Drop di sini'}
+                </p>
+                <p className="text-xs dark:text-gray-400 text-gray-500 mt-1">
+                  Mendukung format Microsoft Excel (.xlsx, .xls) dan CSV (.csv)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1 text-[11px] dark:text-gray-500 text-gray-400">
+                <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-surface-300">.XLSX</span>
+                <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-surface-300">.XLS</span>
+                <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-surface-300">.CSV</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="relative">
+                <textarea
+                  rows={6}
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="Tempel data di sini dari Excel, Google Sheets, atau WhatsApp...&#10;Contoh:&#10;Ritza	Rp10.000&#10;Nesa	Rp15.000&#10;Andin	Rp60.000"
+                  className="w-full p-3 rounded-xl text-xs font-mono dark:bg-surface-300 bg-gray-50 dark:text-white text-gray-900 border dark:border-white/10 border-gray-300 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] dark:text-gray-500 text-gray-400">
+                  Sistem mendukung format <code>[Pemilik] [Harga]</code> atau tabel multi-kolom.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={handleProcessPastedText}
+                  disabled={!pastedText.trim() || parsing}
+                >
+                  {parsing ? 'Memproses...' : 'Proses Data Teks'}
+                </Button>
+              </div>
+            </div>
+          )
         ) : (
           /* File Loaded Header & Switch Button */
           <div className="flex items-center justify-between p-3 rounded-xl dark:bg-accent/10 bg-emerald-50 border dark:border-accent/20 border-emerald-200 text-xs">
@@ -295,11 +377,17 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
               />
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (activeTab === 'upload') {
+                    fileInputRef.current?.click();
+                  } else {
+                    handleClearData();
+                  }
+                }}
                 disabled={loading}
                 className="px-2.5 py-1.5 rounded-lg font-medium text-accent hover:bg-accent/10 transition-colors"
               >
-                Ganti File
+                Ganti Data
               </button>
               <button
                 type="button"
@@ -423,7 +511,7 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
             {items.length > 0 ? (
               <span>Siap mengimpor <strong className="text-accent">{items.length}</strong> transaksi</span>
             ) : (
-              <span>Belum ada file dipilih</span>
+              <span>Belum ada data dipilih</span>
             )}
           </div>
 
@@ -439,7 +527,7 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              {items.length > 0 ? `Impor ${items.length} Transaksi` : 'Pilih File Terlebih Dahulu'}
+              {items.length > 0 ? `Impor ${items.length} Transaksi` : 'Pilih / Tempel Data Terlebih Dahulu'}
             </Button>
           </div>
         </div>

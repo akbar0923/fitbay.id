@@ -98,6 +98,131 @@ export function parseSpreadsheetDate(rawDate, fallbackDate = new Date().toISOStr
 }
 
 /**
+ * Normalisasi nama pemilik
+ */
+function capitalizeOwner(name) {
+  if (!name) return 'Akbar';
+  const trimmed = name.trim();
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+/**
+ * Parse teks yang di-copy-paste langsung dari spreadsheet/excel atau tabel teks
+ */
+export function parsePastedText(rawText, fallbackDate = new Date().toISOString().split('T')[0]) {
+  if (!rawText || !rawText.trim()) {
+    throw new Error('Teks yang ditempel masih kosong.');
+  }
+
+  const lines = rawText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
+  if (lines.length === 0) {
+    throw new Error('Tidak ada baris data yang ditemukan.');
+  }
+
+  const parsedItems = [];
+
+  lines.forEach((line, index) => {
+    // Pisahkan baris berdasarkan tab (\t), koma (,), atau semicolon (;)
+    let delimiter = '\t';
+    if (line.includes('\t')) delimiter = '\t';
+    else if (line.includes(';')) delimiter = ';';
+    else if (line.includes(',')) delimiter = ',';
+
+    const cols = line.split(delimiter).map(c => c.trim()).filter(c => c !== '');
+    if (cols.length === 0) return;
+
+    // Abaikan baris jika merupakan baris header
+    const firstColClean = cols[0].toLowerCase();
+    if (firstColClean === 'no' || firstColClean === 'pemilik' || firstColClean === 'nama barang' || firstColClean === 'owner') {
+      return;
+    }
+
+    let owner = 'Akbar';
+    let itemName = `Barang #${index + 1}`;
+    let category = 'Baju';
+    let costPrice = 0;
+    let sellingPrice = 0;
+    let paymentMethod = 'Transfer Bank';
+    let status = 'Terjual';
+    let date = fallbackDate;
+
+    if (cols.length === 1) {
+      // Hanya harga atau satu string
+      sellingPrice = cleanCurrencyNumber(cols[0]);
+    } else if (cols.length === 2) {
+      // Pola: [Pemilik, Harga] atau [Nama Barang, Harga]
+      const val1 = cols[0];
+      const val2 = cols[1];
+
+      const price2 = cleanCurrencyNumber(val2);
+      if (price2 > 0) {
+        owner = capitalizeOwner(val1);
+        itemName = `Barang ${owner}`;
+        sellingPrice = price2;
+      } else {
+        itemName = val1;
+        sellingPrice = cleanCurrencyNumber(val2);
+      }
+    } else if (cols.length === 3) {
+      // Pola: [Pemilik, Nama Barang, Harga] atau [No, Pemilik, Harga]
+      if (!isNaN(cols[0]) && isNaN(cols[1])) {
+        // [No, Pemilik, Harga]
+        owner = capitalizeOwner(cols[1]);
+        itemName = `Barang ${owner}`;
+        sellingPrice = cleanCurrencyNumber(cols[2]);
+      } else {
+        // [Pemilik, Nama Barang, Harga]
+        owner = capitalizeOwner(cols[0]);
+        itemName = cols[1];
+        sellingPrice = cleanCurrencyNumber(cols[2]);
+      }
+    } else if (cols.length === 4) {
+      // Pola: [Pemilik, Nama Barang, Kategori, Harga]
+      owner = capitalizeOwner(cols[0]);
+      itemName = cols[1];
+      category = cols[2] || 'Baju';
+      sellingPrice = cleanCurrencyNumber(cols[3]);
+    } else if (cols.length >= 5) {
+      // Pola: [No, Pemilik, Nama Barang, Kategori, Harga Jual] atau [Pemilik, Nama Barang, Kategori, Modal, Jual]
+      let offset = 0;
+      if (!isNaN(cols[0])) {
+        offset = 1; // Ada nomor urut di awal
+      }
+      owner = capitalizeOwner(cols[offset] || 'Akbar');
+      itemName = cols[offset + 1] || `Barang ${owner}`;
+      category = cols[offset + 2] || 'Baju';
+      
+      if (cols.length >= offset + 5) {
+        costPrice = cleanCurrencyNumber(cols[offset + 3]);
+        sellingPrice = cleanCurrencyNumber(cols[offset + 4]);
+      } else {
+        sellingPrice = cleanCurrencyNumber(cols[offset + 3]);
+      }
+    }
+
+    if (sellingPrice > 0 || itemName) {
+      parsedItems.push({
+        _rowId: index + 1,
+        itemName,
+        owner,
+        category,
+        costPrice,
+        sellingPrice,
+        paymentMethod,
+        status,
+        date,
+      });
+    }
+  });
+
+  if (parsedItems.length === 0) {
+    throw new Error('Tidak dapat menemukan data transaksi dari teks yang ditempel.');
+  }
+
+  return parsedItems;
+}
+
+/**
  * Parse file spreadsheet (.xlsx, .xls, .csv) menjadi array of objects transaksi yang valid
  */
 export async function parseSpreadsheetFile(file, fallbackDate) {
@@ -147,7 +272,7 @@ export async function parseSpreadsheetFile(file, fallbackDate) {
             if (normalizedKey === 'itemName') {
               item.itemName = String(val).trim();
             } else if (normalizedKey === 'owner') {
-              item.owner = String(val).trim() || 'Akbar';
+              item.owner = capitalizeOwner(String(val).trim());
             } else if (normalizedKey === 'category') {
               item.category = String(val).trim() || 'Lainnya';
             } else if (normalizedKey === 'costPrice') {
@@ -167,7 +292,7 @@ export async function parseSpreadsheetFile(file, fallbackDate) {
           if (item.itemName || item.sellingPrice > 0) {
             // Jika nama barang kosong berikan default
             if (!item.itemName) {
-              item.itemName = `Item #${index + 1}`;
+              item.itemName = `Barang ${item.owner}`;
             }
             parsedItems.push(item);
           }
