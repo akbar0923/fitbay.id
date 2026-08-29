@@ -7,6 +7,7 @@ import { formatCurrency } from '../../utils/formatCurrency';
 import { useOwners } from '../../context/OwnerContext';
 import { useSales } from '../../context/SalesContext';
 import { useAuth } from '../../context/AuthContext';
+import { useInventory } from '../../context/InventoryContext';
 import { calculateProfitSharing } from '../../utils/calculateProfitSharing';
 import toast from 'react-hot-toast';
 
@@ -28,12 +29,15 @@ const initialForm = {
   sellingPrice: '',
   paymentMethod: 'Transfer Bank',
   status: 'Terjual',
+  kodeBarang: '',
+  inventoryItemId: null,
 };
 
 export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) {
   const { owners, addOwner } = useOwners();
   const { profitSharingConfig } = useSales();
   const { isSuperAdmin, isAdmin } = useAuth();
+  const { availableItems } = useInventory();
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +63,8 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
         sellingPrice: String(editData.sellingPrice || ''),
         paymentMethod: editData.paymentMethod || 'Transfer Bank',
         status: editData.status || 'Terjual',
+        kodeBarang: editData.kodeBarang || '',
+        inventoryItemId: editData.inventoryItemId || null,
       });
 
       const savedCustom = editData.skemaCustom || editData.ownerCustomScheme;
@@ -258,12 +264,31 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
         status: form.status,
         isCustomScheme: isCustomSchemeActive,
         skemaCustom: customPayload,
+        kodeBarang: form.kodeBarang || null,
+        inventoryItemId: form.inventoryItemId || null,
       });
       onClose();
     } catch (err) {
       console.error('Submit error:', err);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSelectInventoryItem = (itemId) => {
+    if (!itemId) return;
+    const selected = (availableItems || []).find((i) => i.id === itemId);
+    if (selected) {
+      setForm((prev) => ({
+        ...prev,
+        itemName: selected.namaBarang,
+        category: selected.kategori,
+        ownerName: selected.pemilikBarang,
+        costPrice: String(selected.hargaModal || 0),
+        kodeBarang: selected.kodeBarang,
+        inventoryItemId: selected.id,
+      }));
+      toast.success(`Data barang [${selected.kodeBarang}] ${selected.namaBarang} terisi otomatis!`);
     }
   };
 
@@ -282,6 +307,53 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
       size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Banner Kode Barang Terhubung jika ada */}
+        {form.kodeBarang ? (
+          <div className="p-3 rounded-xl bg-accent/10 border border-accent/25 flex items-center justify-between animate-fade-in text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🏷️</span>
+              <div>
+                <span className="font-semibold dark:text-white text-gray-900">
+                  Terhubung dengan Kode Barang:{' '}
+                  <strong className="font-mono text-accent font-bold">{form.kodeBarang}</strong>
+                </span>
+                <p className="text-[11px] dark:text-gray-400 text-gray-500">
+                  Status di data inventaris otomatis menjadi Terjual saat transaksi disimpan.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm((prev) => ({ ...prev, kodeBarang: '', inventoryItemId: null }))}
+              className="text-xs text-gray-400 hover:text-red-400 p-1"
+              title="Lepas keterhubungan inventaris"
+            >
+              ✕ Lepas
+            </button>
+          </div>
+        ) : (
+          !editData && availableItems && availableItems.length > 0 && (
+            <div className="p-3 rounded-xl dark:bg-surface-300/60 bg-gray-50 border dark:border-white/5 border-gray-200 animate-fade-in">
+              <label className="block text-xs font-semibold dark:text-accent text-accent-dark mb-1 flex items-center gap-1.5">
+                <span>⚡</span>
+                <span>Pilih dari Data Barang Masuk (Inventaris):</span>
+              </label>
+              <select
+                onChange={(e) => handleSelectInventoryItem(e.target.value)}
+                defaultValue=""
+                className="w-full px-3 py-2 rounded-xl text-xs font-medium dark:bg-surface-200 bg-white dark:text-white text-gray-900 border dark:border-white/10 border-gray-300 focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer"
+              >
+                <option value="">-- Pilih barang yang siap dijual untuk auto-fill data --</option>
+                {availableItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    [{item.kodeBarang}] {item.namaBarang} — {item.pemilikBarang} ({formatCurrency(item.hargaModal)})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
             label="Tanggal Transaksi"

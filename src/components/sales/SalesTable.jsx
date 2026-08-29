@@ -284,6 +284,9 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     <th onClick={() => handleSort('date')} className="px-4 py-3 text-left text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider cursor-pointer hover:text-accent">
                       Tanggal <SortIcon field="date" />
                     </th>
+                    <th className="px-3 py-3 text-left text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">
+                      Kode Barang
+                    </th>
                     <th onClick={() => handleSort('itemName')} className="px-4 py-3 text-left text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider cursor-pointer hover:text-accent">
                       Nama Barang <SortIcon field="itemName" />
                     </th>
@@ -320,6 +323,17 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                       <tr key={tx.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors duration-150">
                         <td className="px-4 py-3.5 text-sm dark:text-gray-300 text-gray-700 whitespace-nowrap">
                           {formatDate(tx.date)}
+                        </td>
+                        {/* Kode Barang Badge */}
+                        <td className="px-3 py-3.5 whitespace-nowrap">
+                          {tx.kodeBarang ? (
+                            <span className="inline-flex items-center gap-1 font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-accent/15 text-accent border border-accent/30">
+                              <span>🏷️</span>
+                              <span>{tx.kodeBarang}</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400 font-mono">-</span>
+                          )}
                         </td>
                         <td className="px-4 py-3.5 text-sm dark:text-white text-gray-900 font-medium max-w-[160px] truncate">
                           {tx.itemName}
@@ -393,7 +407,14 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                 <div key={tx.id} className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-4 shadow-sm">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <p className="text-sm font-semibold dark:text-white text-gray-900">{tx.itemName}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {tx.kodeBarang && (
+                          <span className="font-mono text-[11px] font-bold text-accent px-1.5 py-0.5 rounded bg-accent/15 border border-accent/25">
+                            {tx.kodeBarang}
+                          </span>
+                        )}
+                        <p className="text-sm font-semibold dark:text-white text-gray-900">{tx.itemName}</p>
+                      </div>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs dark:text-gray-400 text-gray-500">
                         <span>{formatDate(tx.date)}</span>
                         <span>·</span>

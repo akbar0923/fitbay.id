@@ -1,0 +1,558 @@
+import { useState, useMemo } from 'react';
+import { useInventory } from '../context/InventoryContext';
+import { useOwners } from '../context/OwnerContext';
+import { useSales } from '../context/SalesContext';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonCard, SkeletonTable } from '../components/ui/Skeleton';
+import { formatCurrency, formatDate } from '../utils/formatCurrency';
+import { CATEGORIES } from '../constants/profitSharingConfig';
+import InventoryFormModal from '../components/inventory/InventoryFormModal';
+import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
+import DeleteInventoryModal from '../components/inventory/DeleteInventoryModal';
+import SalesFormModal from '../components/sales/SalesFormModal';
+import toast from 'react-hot-toast';
+
+export default function Inventory() {
+  const { items, loading, stats, addItem, updateItem, deleteItem, markAsSold } = useInventory();
+  const { owners } = useOwners();
+  const { addTransaction } = useSales();
+
+  // Filter States
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [filterOwner, setFilterOwner] = useState('ALL');
+
+  // Modal States
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedDetailItem, setSelectedDetailItem] = useState(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deletingItem, setDeletingItem] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Quick Sell Modal State
+  const [isQuickSellOpen, setIsQuickSellOpen] = useState(false);
+  const [quickSellData, setQuickSellData] = useState(null);
+
+  // Filter Logic
+  const filteredItems = useMemo(() => {
+    let result = [...items];
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (item) =>
+          item.kodeBarang?.toLowerCase().includes(q) ||
+          item.namaBarang?.toLowerCase().includes(q) ||
+          item.catatan?.toLowerCase().includes(q) ||
+          item.pemilikBarang?.toLowerCase().includes(q)
+      );
+    }
+
+    if (filterStatus !== 'ALL') {
+      result = result.filter((item) => item.status === filterStatus);
+    }
+
+    if (filterCategory !== 'ALL') {
+      result = result.filter((item) => item.kategori === filterCategory);
+    }
+
+    if (filterOwner !== 'ALL') {
+      result = result.filter(
+        (item) => item.pemilikBarang?.toLowerCase() === filterOwner.toLowerCase()
+      );
+    }
+
+    return result;
+  }, [items, search, filterStatus, filterCategory, filterOwner]);
+
+  const handleOpenAdd = () => {
+    setEditingItem(null);
+    setIsFormOpen(true);
+  };
+
+  const handleOpenEdit = (item) => {
+    setEditingItem(item);
+    setIsFormOpen(true);
+  };
+
+  const handleOpenDetail = (item) => {
+    setSelectedDetailItem(item);
+    setIsDetailOpen(true);
+  };
+
+  const handleOpenDelete = (item) => {
+    setDeletingItem(item);
+    setIsDeleteOpen(true);
+  };
+
+  const handleDeleteConfirm = async (id) => {
+    setDeleteLoading(true);
+    try {
+      await deleteItem(id);
+      setIsDeleteOpen(false);
+      setDeletingItem(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleFormSubmit = async (formData) => {
+    if (editingItem) {
+      await updateItem(editingItem.id, formData);
+    } else {
+      await addItem(formData);
+    }
+  };
+
+  // Tandai Terjual (Quick Sell flow)
+  const handleMarkSold = (item) => {
+    setQuickSellData({
+      date: new Date().toISOString().split('T')[0],
+      itemName: item.namaBarang,
+      category: item.kategori,
+      ownerName: item.pemilikBarang,
+      costPrice: item.hargaModal,
+      sellingPrice: '',
+      paymentMethod: 'Transfer Bank',
+      status: 'Terjual',
+      kodeBarang: item.kodeBarang,
+      inventoryItemId: item.id,
+    });
+    setIsQuickSellOpen(true);
+  };
+
+  // Submit Transaksi Penjualan dari Quick Sell
+  const handleQuickSellSubmit = async (salesPayload) => {
+    try {
+      const newTx = await addTransaction({
+        ...salesPayload,
+        kodeBarang: quickSellData?.kodeBarang,
+        inventoryItemId: quickSellData?.inventoryItemId,
+      });
+
+      if (quickSellData?.inventoryItemId) {
+        await markAsSold(quickSellData.inventoryItemId, newTx?.id || `tx_${Date.now()}`);
+      }
+
+      toast.success(`Barang ${quickSellData?.kodeBarang} berhasil terjual dan masuk ke Data Penjualan!`);
+      setIsQuickSellOpen(false);
+      setQuickSellData(null);
+    } catch (err) {
+      toast.error('Gagal memproses transaksi penjualan');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+        <SkeletonTable rows={5} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold dark:text-white text-gray-900 flex items-center gap-2">
+            <span className="w-8 h-8 rounded-xl bg-accent/20 text-accent flex items-center justify-center text-lg">
+              📦
+            </span>
+            Data Barang & Inventaris
+          </h1>
+          <p className="text-sm dark:text-gray-400 text-gray-500 mt-1">
+            Pencatatan stok barang titipan masuk, penomoran kode unik (FB-XXXX), dan status kesiapan live
+          </p>
+        </div>
+        <Button onClick={handleOpenAdd} className="shrink-0 shadow-lg shadow-accent/25">
+          <svg className="w-5 h-5 mr-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Tambah Barang Baru
+        </Button>
+      </div>
+
+      {/* Summary Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Barang */}
+        <Card className="p-4 relative overflow-hidden group hover:border-accent/30 transition-all duration-300">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Total Barang</p>
+              <h3 className="text-2xl font-bold dark:text-white text-gray-900 mt-1">{stats.total}</h3>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-purple/10 text-purple flex items-center justify-center text-xl">
+              📦
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-1.5 text-xs dark:text-gray-400 text-gray-500">
+            <span>Semua barang tercatat</span>
+          </div>
+        </Card>
+
+        {/* Belum Terjual / Siap Live */}
+        <Card className="p-4 relative overflow-hidden group hover:border-amber-500/30 transition-all duration-300">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Belum Terjual (Siap Live)</p>
+              <h3 className="text-2xl font-bold text-amber-500 dark:text-amber-400 mt-1">{stats.availableCount}</h3>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-xl">
+              ⏳
+            </div>
+          </div>
+          <div className="mt-3 text-xs text-amber-500/90 dark:text-amber-400/90 font-medium">
+            Nilai Modal: {formatCurrency(stats.totalCapitalValue)}
+          </div>
+        </Card>
+
+        {/* Terjual */}
+        <Card className="p-4 relative overflow-hidden group hover:border-emerald-500/30 transition-all duration-300">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Sudah Terjual</p>
+              <h3 className="text-2xl font-bold text-emerald-500 dark:text-emerald-400 mt-1">{stats.soldCount}</h3>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-xl">
+              ✅
+            </div>
+          </div>
+          <div className="mt-3 text-xs text-emerald-500/90 dark:text-emerald-400/90 font-medium">
+            Modal Terjual: {formatCurrency(stats.soldCapitalValue)}
+          </div>
+        </Card>
+
+        {/* Total Nilai Modal Keseluruhan */}
+        <Card className="p-4 relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Total Nilai Modal</p>
+              <h3 className="text-xl font-bold text-blue-500 dark:text-blue-400 mt-1">
+                {formatCurrency(stats.totalCapitalValue + stats.soldCapitalValue)}
+              </h3>
+            </div>
+            <div className="w-11 h-11 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center text-xl">
+              💰
+            </div>
+          </div>
+          <div className="mt-3 text-xs text-blue-500/90 dark:text-blue-400/90 font-medium">
+            Akumulasi modal barang masuk
+          </div>
+        </Card>
+      </div>
+
+      {/* Filter & Search Bar */}
+      <Card className="p-4">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+          {/* Search Box */}
+          <div className="relative flex-1">
+            <svg
+              className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 dark:text-gray-400 text-gray-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Cari kode (FB-XXXX), nama barang, catatan, atau pemilik..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm
+                dark:bg-white/5 bg-gray-100 dark:text-white text-gray-900
+                dark:border-white/10 border-gray-300 border
+                dark:placeholder-gray-500 placeholder-gray-400
+                focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent
+                transition-all duration-200"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs p-1"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Status Filter */}
+          <div className="w-full md:w-44">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm
+                dark:bg-surface-200 bg-white dark:text-white text-gray-900
+                dark:border-white/10 border-gray-300 border
+                focus:outline-none focus:ring-2 focus:ring-accent/50 cursor-pointer"
+            >
+              <option value="ALL">Semua Status</option>
+              <option value="Belum Terjual">⏳ Belum Terjual (Siap Live)</option>
+              <option value="Terjual">✅ Terjual</option>
+            </select>
+          </div>
+
+          {/* Category Filter */}
+          <div className="w-full md:w-36">
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm
+                dark:bg-surface-200 bg-white dark:text-white text-gray-900
+                dark:border-white/10 border-gray-300 border
+                focus:outline-none focus:ring-2 focus:ring-accent/50 cursor-pointer"
+            >
+              <option value="ALL">Semua Kategori</option>
+              {CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Owner Filter */}
+          <div className="w-full md:w-40">
+            <select
+              value={filterOwner}
+              onChange={(e) => setFilterOwner(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm
+                dark:bg-surface-200 bg-white dark:text-white text-gray-900
+                dark:border-white/10 border-gray-300 border
+                focus:outline-none focus:ring-2 focus:ring-accent/50 cursor-pointer"
+            >
+              <option value="ALL">Semua Pemilik</option>
+              {owners.map((owner) => (
+                <option key={owner.id || owner.name} value={owner.name}>
+                  {owner.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </Card>
+
+      {/* Table Data Barang */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="dark:bg-white/[0.02] bg-gray-50/80 border-b dark:border-white/5 border-gray-200 text-xs dark:text-gray-400 text-gray-500 uppercase tracking-wider">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Kode Barang</th>
+                <th className="px-6 py-4 font-semibold">Nama Barang & Catatan</th>
+                <th className="px-6 py-4 font-semibold">Kategori</th>
+                <th className="px-6 py-4 font-semibold">Pemilik Barang</th>
+                <th className="px-6 py-4 font-semibold">Harga Modal</th>
+                <th className="px-6 py-4 font-semibold">Status</th>
+                <th className="px-6 py-4 font-semibold text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y dark:divide-white/5 divide-gray-200">
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12">
+                    <EmptyState
+                      icon="📦"
+                      title="Belum Ada Data Barang"
+                      description={
+                        search || filterStatus !== 'ALL' || filterCategory !== 'ALL' || filterOwner !== 'ALL'
+                          ? 'Tidak ada barang yang sesuai dengan filter pencarian.'
+                          : 'Belum ada barang di inventaris. Silakan tambahkan barang titipan pertama Anda.'
+                      }
+                      action={
+                        <Button size="sm" onClick={handleOpenAdd}>
+                          + Tambah Barang Baru
+                        </Button>
+                      }
+                    />
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map((item) => {
+                  const isSold = item.status === 'Terjual';
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className="dark:hover:bg-white/[0.02] hover:bg-gray-50/80 transition-colors"
+                    >
+                      {/* Kode Barang */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-accent/15 text-accent border border-accent/30 tracking-wider">
+                          <span>🏷️</span>
+                          <span>{item.kodeBarang}</span>
+                        </span>
+                      </td>
+
+                      {/* Nama Barang & Catatan */}
+                      <td className="px-6 py-4 max-w-xs">
+                        <div className="space-y-0.5">
+                          <button
+                            onClick={() => handleOpenDetail(item)}
+                            className="font-semibold dark:text-white text-gray-900 hover:text-accent dark:hover:text-accent transition-colors text-left line-clamp-1"
+                          >
+                            {item.namaBarang}
+                          </button>
+                          {item.catatan && (
+                            <p className="text-xs dark:text-gray-400 text-gray-500 line-clamp-1">
+                              {item.catatan}
+                            </p>
+                          )}
+                          <span className="text-[10px] dark:text-gray-500 text-gray-400 block">
+                            Masuk: {item.tanggalMasuk ? formatDate(item.tanggalMasuk) : '-'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Kategori */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-700 border dark:border-white/5 border-gray-200">
+                          {item.kategori}
+                        </span>
+                      </td>
+
+                      {/* Pemilik Barang */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="font-semibold text-accent dark:text-accent text-xs">
+                          {item.pemilikBarang}
+                        </span>
+                      </td>
+
+                      {/* Harga Modal */}
+                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-bold dark:text-gray-200 text-gray-800">
+                        {formatCurrency(item.hargaModal || 0)}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                            isSold
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSold ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                          <span>{item.status}</span>
+                        </span>
+                      </td>
+
+                      {/* Aksi */}
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Tombol Tandai Terjual (untuk barang belum terjual) */}
+                          {!isSold ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleMarkSold(item)}
+                              className="text-xs py-1 px-2.5 shadow-md shadow-accent/20 flex items-center gap-1"
+                              title="Tandai Terjual & Input ke Penjualan"
+                            >
+                              <span>🏷️</span>
+                              <span>Tandai Terjual</span>
+                            </Button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenDetail(item)}
+                              title="Lihat Detail Transaksi Penjualan"
+                              className="px-2 py-1 rounded-lg text-xs font-semibold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors flex items-center gap-1"
+                            >
+                              <span>👁️</span>
+                              <span>Lihat Transaksi</span>
+                            </button>
+                          )}
+
+                          {/* Tombol Detail */}
+                          <button
+                            onClick={() => handleOpenDetail(item)}
+                            title="Detail Barang"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                          </button>
+
+                          {/* Tombol Edit */}
+                          <button
+                            onClick={() => handleOpenEdit(item)}
+                            title="Edit Barang"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-accent hover:bg-accent/10 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                            </svg>
+                          </button>
+
+                          {/* Tombol Hapus */}
+                          <button
+                            onClick={() => handleOpenDelete(item)}
+                            title="Hapus Barang"
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Modal: Tambah & Edit Barang */}
+      <InventoryFormModal
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSubmit={handleFormSubmit}
+        editData={editingItem}
+      />
+
+      {/* Modal: Detail Barang */}
+      <InventoryDetailModal
+        isOpen={isDetailOpen}
+        onClose={() => setIsDetailOpen(false)}
+        item={selectedDetailItem}
+        onMarkSold={handleMarkSold}
+        onEdit={handleOpenEdit}
+      />
+
+      {/* Modal: Hapus Barang */}
+      <DeleteInventoryModal
+        isOpen={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={handleDeleteConfirm}
+        item={deletingItem}
+        loading={deleteLoading}
+      />
+
+      {/* Modal: Quick Sell to Penjualan */}
+      <SalesFormModal
+        isOpen={isQuickSellOpen}
+        onClose={() => setIsQuickSellOpen(false)}
+        onSubmit={handleQuickSellSubmit}
+        editData={quickSellData}
+      />
+    </div>
+  );
+}
