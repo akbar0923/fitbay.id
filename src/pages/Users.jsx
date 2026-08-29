@@ -367,15 +367,15 @@ export default function Users() {
             </div>
           </div>
           <div className="mt-3 text-xs text-emerald-500/90 dark:text-emerald-400/90 font-medium">
-            Akses Penuh Sistem
+            Akses Penuh
           </div>
         </Card>
 
-        {/* Admin Biasa (Akses Terbatas) */}
+        {/* Admin */}
         <Card className="p-4 relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Admin (Operasional)</p>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Admin</p>
               <h3 className="text-2xl font-bold text-blue-500 dark:text-blue-400 mt-1">{loading ? '...' : stats.adminCount}</h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
@@ -389,11 +389,11 @@ export default function Users() {
           </div>
         </Card>
 
-        {/* Staff Fitbay */}
+        {/* Staff */}
         <Card className="p-4 relative overflow-hidden group hover:border-amber-500/30 transition-all duration-300">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Staff Fitbay</p>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Staff</p>
               <h3 className="text-2xl font-bold text-amber-500 dark:text-amber-400 mt-1">{loading ? '...' : stats.staffCount}</h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
@@ -445,7 +445,7 @@ export default function Users() {
           </div>
 
           {/* Role Filter */}
-          <div className="w-full md:w-48">
+          <div className="w-full md:w-44">
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
@@ -457,7 +457,7 @@ export default function Users() {
             >
               <option value="ALL">Semua Role</option>
               <option value="superadmin">Super Admin</option>
-              <option value="admin">Admin (Operasional)</option>
+              <option value="admin">Admin</option>
               <option value="staff">Staff</option>
             </select>
           </div>
@@ -590,20 +590,20 @@ export default function Users() {
                       <td className="px-6 py-4">
                         <div className="space-y-1">
                           {isSuper ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                               🛡️ Super Admin
                             </span>
                           ) : isAdminRole ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                              👔 Admin (Akses Terbatas)
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                              👔 Admin
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30">
-                              👤 {u.role === 'staff' ? 'Staff Fitbay' : u.role}
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                              👤 Staff
                             </span>
                           )}
                           <p className="text-xs dark:text-gray-400 text-gray-500">
-                            {u.title || (isSuper ? 'Super Admin' : isAdminRole ? 'Admin' : 'Staff Fitbay')}
+                            {u.title || (isSuper ? 'Super Admin' : isAdminRole ? 'Admin' : 'Staff')}
                           </p>
                         </div>
                       </td>
@@ -739,14 +739,14 @@ export default function Users() {
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value })}
             >
-              <option value={USER_ROLES.STAFF}>Staff (Host Live & Penjualan)</option>
-              <option value={USER_ROLES.ADMIN}>Admin (Akses Terbatas — Operasional & Pemilik)</option>
-              <option value={USER_ROLES.SUPER_ADMIN}>Super Admin (Akses Penuh — Keuangan & User)</option>
+              <option value={USER_ROLES.SUPER_ADMIN}>Super Admin</option>
+              <option value={USER_ROLES.ADMIN}>Admin</option>
+              <option value={USER_ROLES.STAFF}>Staff</option>
             </Select>
 
             <Input
               label="Jabatan / Posisi"
-              placeholder={formData.role === USER_ROLES.SUPER_ADMIN ? 'Founder & Super Admin' : formData.role === USER_ROLES.ADMIN ? 'Admin Operasional' : 'Staff & Host Live'}
+              placeholder={formData.role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : formData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff'}
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
             />
@@ -837,9 +837,9 @@ export default function Users() {
               value={editFormData.role}
               onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
             >
-              <option value={USER_ROLES.STAFF}>Staff (Host Live & Penjualan)</option>
-              <option value={USER_ROLES.ADMIN}>Admin (Akses Terbatas — Operasional & Pemilik)</option>
-              <option value={USER_ROLES.SUPER_ADMIN}>Super Admin (Akses Penuh — Keuangan & User)</option>
+              <option value={USER_ROLES.SUPER_ADMIN}>Super Admin</option>
+              <option value={USER_ROLES.ADMIN}>Admin</option>
+              <option value={USER_ROLES.STAFF}>Staff</option>
             </Select>
 
             <Select
@@ -856,7 +856,7 @@ export default function Users() {
             label="Jabatan / Posisi"
             value={editFormData.title}
             onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
-            placeholder={editFormData.role === USER_ROLES.SUPER_ADMIN ? 'Founder & Super Admin' : editFormData.role === USER_ROLES.ADMIN ? 'Admin Operasional' : 'Staff & Host Live'}
+            placeholder={editFormData.role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : editFormData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff'}
           />
 
           <div className="pt-3 flex justify-end gap-2 border-t dark:border-white/5 border-gray-200">
