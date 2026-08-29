@@ -4,9 +4,13 @@ import { useAuth } from '../../context/AuthContext';
 
 export default function MobileNav() {
   const location = useLocation();
-  const { isAdmin } = useAuth();
+  const { isSuperAdmin, isAdmin } = useAuth();
 
-  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.superAdminOnly) return isSuperAdmin;
+    if (item.adminOnly) return isAdmin;
+    return true;
+  });
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 

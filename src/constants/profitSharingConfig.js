@@ -19,8 +19,8 @@ export const PROFIT_SHARING_CONFIG = {
     color: '#3B82F6', // blue-500
     icon: '👨',
   },
-  nesa: {
-    label: 'Nesa',
+  nessa: {
+    label: 'Nessa',
     percentage: 5,
     color: '#EC4899', // pink-500
     icon: '👩',
@@ -76,8 +76,15 @@ export const PAYMENT_METHOD_COLORS = {
 
 // Role Pengguna
 export const USER_ROLES = {
+  SUPER_ADMIN: 'superadmin',
   ADMIN: 'admin',
   STAFF: 'staff',
+};
+
+export const ROLE_LABELS = {
+  superadmin: 'Super Admin',
+  admin: 'Admin',
+  staff: 'Staff',
 };
 
 // Default profile dan role untuk akun tim internal Fitbay.id
@@ -85,31 +92,31 @@ export const DEFAULT_USER_PROFILES = {
   muhbar: {
     name: 'Akbar',
     username: 'muhbar',
-    role: 'admin',
-    title: 'Founder & Admin',
+    role: 'superadmin',
+    title: 'Founder & Super Admin',
   },
   akbar: {
     name: 'Akbar',
     username: 'akbar',
-    role: 'admin',
-    title: 'Founder & Admin',
+    role: 'superadmin',
+    title: 'Founder & Super Admin',
   },
   nessa: {
     name: 'Nessa',
     username: 'nessa',
-    role: 'admin',
-    title: 'Co-Founder & Admin',
+    role: 'superadmin',
+    title: 'Co-Founder & Super Admin',
   },
   nesa: {
     name: 'Nesa',
     username: 'nesa',
-    role: 'admin',
-    title: 'Co-Founder & Admin',
+    role: 'superadmin',
+    title: 'Co-Founder & Super Admin',
   },
   admin: {
     name: 'Administrator',
     username: 'admin',
-    role: 'admin',
+    role: 'superadmin',
     title: 'Super Admin',
   },
   andin: {

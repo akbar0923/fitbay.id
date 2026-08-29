@@ -22,7 +22,7 @@ import { DEFAULT_USER_PROFILES, USER_ROLES } from '../constants/profitSharingCon
 
 const COLLECTION_NAME = 'users';
 const LOCAL_STORAGE_KEY = 'fitbay_users_cache';
-const ADMIN_USERNAMES = ['muhbar', 'nessa', 'admin', 'akbar', 'nesa'];
+const SUPER_ADMIN_USERNAMES = ['muhbar', 'nessa', 'admin', 'akbar', 'nesa'];
 const EMAIL_DOMAIN = import.meta.env.VITE_AUTH_EMAIL_DOMAIN || 'fitbay.id';
 
 /**
@@ -47,8 +47,8 @@ export function getDefaultTeamUsers() {
       name: 'Akbar',
       username: 'akbar',
       email: usernameToInternalEmail('akbar'),
-      role: USER_ROLES.ADMIN,
-      title: 'Founder & Admin',
+      role: USER_ROLES.SUPER_ADMIN,
+      title: 'Founder & Super Admin',
       status: 'active',
       createdAt: '2026-01-01T00:00:00.000Z',
     },
@@ -57,8 +57,8 @@ export function getDefaultTeamUsers() {
       name: 'Nessa',
       username: 'nesa',
       email: usernameToInternalEmail('nesa'),
-      role: USER_ROLES.ADMIN,
-      title: 'Co-Founder & Admin',
+      role: USER_ROLES.SUPER_ADMIN,
+      title: 'Co-Founder & Super Admin',
       status: 'active',
       createdAt: '2026-01-01T00:00:00.000Z',
     },
@@ -124,18 +124,18 @@ export function saveLocalUsers(users) {
 export async function getUserProfile(uid, username, email) {
   const docRef = doc(db, COLLECTION_NAME, uid);
   const cleanUsername = (username || '').toLowerCase();
-  const isAdminUser = ADMIN_USERNAMES.includes(cleanUsername);
+  const isSuperAdminUser = SUPER_ADMIN_USERNAMES.includes(cleanUsername);
 
   try {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       const data = docSnap.data();
-      if (isAdminUser && data.role !== USER_ROLES.ADMIN) {
+      if (isSuperAdminUser && data.role !== USER_ROLES.SUPER_ADMIN && data.role !== 'admin') {
         const updatedData = {
           ...data,
-          role: USER_ROLES.ADMIN,
-          title: data.title?.includes('Admin') ? data.title : (cleanUsername === 'muhbar' ? 'Founder & Admin' : 'Co-Founder & Admin'),
+          role: USER_ROLES.SUPER_ADMIN,
+          title: data.title?.includes('Admin') ? data.title : (cleanUsername === 'muhbar' ? 'Founder & Super Admin' : 'Co-Founder & Super Admin'),
           status: data.status || 'active',
           updatedAt: new Date().toISOString(),
         };
@@ -152,8 +152,8 @@ export async function getUserProfile(uid, username, email) {
   const defaultProfile = DEFAULT_USER_PROFILES[cleanUsername] || {
     name: username || 'User',
     username: cleanUsername,
-    role: isAdminUser ? USER_ROLES.ADMIN : USER_ROLES.STAFF,
-    title: isAdminUser ? 'Admin' : 'Staff Fitbay',
+    role: isSuperAdminUser ? USER_ROLES.SUPER_ADMIN : USER_ROLES.STAFF,
+    title: isSuperAdminUser ? 'Super Admin' : 'Staff Fitbay',
     status: 'active',
   };
 

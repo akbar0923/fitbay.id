@@ -152,13 +152,25 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const isSuperAdmin =
+    user?.role === 'superadmin' ||
+    ['muhbar', 'nessa', 'akbar', 'nesa', 'admin'].includes(user?.username?.toLowerCase());
+
+  const isAdmin =
+    isSuperAdmin ||
+    user?.role === 'admin';
+
+  const isLimitedAdmin = user?.role === 'admin' && !isSuperAdmin;
+
   const value = {
     user,
     loading,
     login,
     logout,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
+    isSuperAdmin,
+    isAdmin,
+    isLimitedAdmin,
     isStaff: user?.role === 'staff',
   };
 

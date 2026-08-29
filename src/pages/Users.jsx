@@ -100,12 +100,13 @@ export default function Users() {
   // Statistics
   const stats = useMemo(() => {
     const total = users.length;
+    const superAdminCount = users.filter((u) => u.role === 'superadmin').length;
     const adminCount = users.filter((u) => u.role === 'admin').length;
-    const staffCount = users.filter((u) => u.role === 'staff').length;
+    const staffCount = users.filter((u) => u.role === 'staff' || (!u.role && u.role !== 'superadmin' && u.role !== 'admin')).length;
     const activeCount = users.filter((u) => (u.status || 'active') === 'active').length;
     const inactiveCount = total - activeCount;
 
-    return { total, adminCount, staffCount, activeCount, inactiveCount };
+    return { total, superAdminCount, adminCount, staffCount, activeCount, inactiveCount };
   }, [users]);
 
   // Handlers: Tambah User
@@ -160,7 +161,7 @@ export default function Users() {
         username: cleanUsername,
         password: formData.password,
         role: formData.role,
-        title: formData.title || (formData.role === USER_ROLES.ADMIN ? 'Admin Fitbay' : 'Staff & Host Live'),
+        title: formData.title || (formData.role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : formData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff & Host Live'),
         createdBy: currentUser?.username || 'admin',
       });
 
@@ -198,7 +199,7 @@ export default function Users() {
       const updatePayload = {
         name: editFormData.name.trim(),
         role: editFormData.role,
-        title: editFormData.title.trim() || (editFormData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
+        title: editFormData.title.trim() || (editFormData.role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : editFormData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
         status: editFormData.status,
       };
 
@@ -309,7 +310,7 @@ export default function Users() {
             Kelola User & Hak Akses
           </h1>
           <p className="text-sm dark:text-gray-400 text-gray-500 mt-1">
-            Fitur khusus Super Admin untuk mengelola akun pengguna, hak akses role, dan keamanan sistem
+            Fitur khusus Super Admin untuk membuat akun pengguna, mengatur role (Super Admin, Admin, Staff), dan hak akses sistem
           </p>
         </div>
         <Button onClick={handleOpenAddModal} className="shrink-0 shadow-lg shadow-accent/25">
@@ -329,7 +330,7 @@ export default function Users() {
               <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Total User</p>
               <h3 className="text-2xl font-bold dark:text-white text-gray-900 mt-1">{loading ? '...' : stats.total}</h3>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+            <div className="w-11 h-11 rounded-xl bg-purple/10 text-purple flex items-center justify-center">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
               </svg>
@@ -346,7 +347,7 @@ export default function Users() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Super Admin</p>
-              <h3 className="text-2xl font-bold text-emerald-500 dark:text-emerald-400 mt-1">{loading ? '...' : stats.adminCount}</h3>
+              <h3 className="text-2xl font-bold text-emerald-500 dark:text-emerald-400 mt-1">{loading ? '...' : stats.superAdminCount}</h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -355,45 +356,43 @@ export default function Users() {
             </div>
           </div>
           <div className="mt-3 text-xs text-emerald-500/90 dark:text-emerald-400/90 font-medium">
-            Founder & Co-Founder
+            Akses Penuh Sistem
           </div>
         </Card>
 
-        {/* Staff Fitbay */}
-        <Card className="p-4 relative overflow-hidden group hover:border-purple-500/30 transition-all duration-300">
+        {/* Admin Biasa (Akses Terbatas) */}
+        <Card className="p-4 relative overflow-hidden group hover:border-blue-500/30 transition-all duration-300">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Staff Fitbay</p>
-              <h3 className="text-2xl font-bold text-purple-500 dark:text-purple-400 mt-1">{loading ? '...' : stats.staffCount}</h3>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Admin (Operasional)</p>
+              <h3 className="text-2xl font-bold text-blue-500 dark:text-blue-400 mt-1">{loading ? '...' : stats.adminCount}</h3>
             </div>
-            <div className="w-11 h-11 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+            <div className="w-11 h-11 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
               </svg>
             </div>
           </div>
-          <div className="mt-3 text-xs text-purple-500/90 dark:text-purple-400/90 font-medium">
-            Staff & Host Live
+          <div className="mt-3 text-xs text-blue-500/90 dark:text-blue-400/90 font-medium">
+            Akses Terbatas
           </div>
         </Card>
 
-        {/* Akun Nonaktif */}
+        {/* Staff Fitbay */}
         <Card className="p-4 relative overflow-hidden group hover:border-amber-500/30 transition-all duration-300">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Akun Nonaktif</p>
-              <h3 className={`text-2xl font-bold mt-1 ${stats.inactiveCount > 0 ? 'text-amber-500' : 'dark:text-white text-gray-900'}`}>
-                {loading ? '...' : stats.inactiveCount}
-              </h3>
+              <p className="text-xs font-medium dark:text-gray-400 text-gray-500 uppercase tracking-wider">Staff Fitbay</p>
+              <h3 className="text-2xl font-bold text-amber-500 dark:text-amber-400 mt-1">{loading ? '...' : stats.staffCount}</h3>
             </div>
             <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 0 1 3 3h-15a3 3 0 0 1 3-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.003 0H9.497m5.003 0a3.375 3.375 0 0 0-5.003 0" />
               </svg>
             </div>
           </div>
-          <div className="mt-3 text-xs dark:text-gray-400 text-gray-500">
-            Akses dicabut sementara
+          <div className="mt-3 text-xs text-amber-500/90 dark:text-amber-400/90 font-medium">
+            Host Live & Penjualan
           </div>
         </Card>
       </div>
@@ -435,7 +434,7 @@ export default function Users() {
           </div>
 
           {/* Role Filter */}
-          <div className="w-full md:w-44">
+          <div className="w-full md:w-48">
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
@@ -446,7 +445,8 @@ export default function Users() {
                 cursor-pointer"
             >
               <option value="ALL">Semua Role</option>
-              <option value="admin">Admin (Super Admin)</option>
+              <option value="superadmin">Super Admin</option>
+              <option value="admin">Admin (Operasional)</option>
               <option value="staff">Staff</option>
             </select>
           </div>
@@ -478,7 +478,7 @@ export default function Users() {
               <tr>
                 <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Pengguna</th>
                 <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Email Internal</th>
-                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Role & Jabatan</th>
+                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Role & Hak Akses</th>
                 <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Status</th>
                 <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700 text-right">Aksi</th>
               </tr>
@@ -528,7 +528,8 @@ export default function Users() {
                 </tr>
               ) : (
                 filteredUsers.map((u) => {
-                  const isAdmin = u.role === 'admin';
+                  const isSuper = u.role === 'superadmin' || ['muhbar', 'nessa', 'akbar', 'nesa', 'admin'].includes(u.username?.toLowerCase());
+                  const isAdminRole = !isSuper && u.role === 'admin';
                   const isActive = (u.status || 'active') === 'active';
                   const isCurrentLoggedUser = u.uid === currentUser?.uid;
 
@@ -541,9 +542,11 @@ export default function Users() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm uppercase shadow-sm
-                            ${isAdmin 
+                            ${isSuper 
                               ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30' 
-                              : 'bg-gradient-to-br from-purple-500/20 to-indigo-500/20 text-purple-400 border border-purple-500/30'}`}
+                              : isAdminRole
+                              ? 'bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-400 border border-blue-500/30'
+                              : 'bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-400 border border-purple-500/30'}`}
                           >
                             {u.username?.charAt(0) || u.name?.charAt(0) || '?'}
                           </div>
@@ -575,11 +578,21 @@ export default function Users() {
                       {/* Role & Jabatan */}
                       <td className="px-6 py-4">
                         <div className="space-y-1">
-                          <Badge variant={isAdmin ? 'success' : 'default'} className="uppercase font-semibold text-[10px] tracking-wider">
-                            {isAdmin ? 'Admin' : 'Staff'}
-                          </Badge>
+                          {isSuper ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              🛡️ Super Admin
+                            </span>
+                          ) : isAdminRole ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                              👔 Admin (Akses Terbatas)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                              👤 {u.role === 'staff' ? 'Staff Fitbay' : u.role}
+                            </span>
+                          )}
                           <p className="text-xs dark:text-gray-400 text-gray-500">
-                            {u.title || (isAdmin ? 'Admin' : 'Staff Fitbay')}
+                            {u.title || (isSuper ? 'Super Admin' : isAdminRole ? 'Admin' : 'Staff Fitbay')}
                           </p>
                         </div>
                       </td>
@@ -715,13 +728,14 @@ export default function Users() {
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value })}
             >
-              <option value={USER_ROLES.STAFF}>Staff (Host Live / Staff Fitbay)</option>
-              <option value={USER_ROLES.ADMIN}>Admin (Super Admin / Akses Penuh)</option>
+              <option value={USER_ROLES.STAFF}>Staff (Host Live & Penjualan)</option>
+              <option value={USER_ROLES.ADMIN}>Admin (Akses Terbatas — Operasional & Pemilik)</option>
+              <option value={USER_ROLES.SUPER_ADMIN}>Super Admin (Akses Penuh — Keuangan & User)</option>
             </Select>
 
             <Input
               label="Jabatan / Posisi"
-              placeholder={formData.role === USER_ROLES.ADMIN ? 'Founder & Admin' : 'Staff & Host Live'}
+              placeholder={formData.role === USER_ROLES.SUPER_ADMIN ? 'Founder & Super Admin' : formData.role === USER_ROLES.ADMIN ? 'Admin Operasional' : 'Staff & Host Live'}
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
             />
@@ -812,8 +826,9 @@ export default function Users() {
               value={editFormData.role}
               onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
             >
-              <option value={USER_ROLES.STAFF}>Staff (Host Live / Staff)</option>
-              <option value={USER_ROLES.ADMIN}>Admin (Super Admin)</option>
+              <option value={USER_ROLES.STAFF}>Staff (Host Live & Penjualan)</option>
+              <option value={USER_ROLES.ADMIN}>Admin (Akses Terbatas — Operasional & Pemilik)</option>
+              <option value={USER_ROLES.SUPER_ADMIN}>Super Admin (Akses Penuh — Keuangan & User)</option>
             </Select>
 
             <Select
@@ -830,7 +845,7 @@ export default function Users() {
             label="Jabatan / Posisi"
             value={editFormData.title}
             onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
-            placeholder={editFormData.role === USER_ROLES.ADMIN ? 'Founder & Admin' : 'Staff & Host Live'}
+            placeholder={editFormData.role === USER_ROLES.SUPER_ADMIN ? 'Founder & Super Admin' : editFormData.role === USER_ROLES.ADMIN ? 'Admin Operasional' : 'Staff & Host Live'}
           />
 
           <div className="pt-3 flex justify-end gap-2 border-t dark:border-white/5 border-gray-200">

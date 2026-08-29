@@ -62,19 +62,21 @@ export default function App() {
                           <Route path="/" element={<Dashboard />} />
                           <Route path="/sales" element={<SalesData />} />
                           
-                          {/* Halaman Khusus Admin (Founder & Co-Founder) */}
+                          {/* Halaman Kelola Pemilik (Super Admin & Admin Operasional) */}
                           <Route
                             path="/owners"
                             element={
-                              <ProtectedRoute allowedRoles={['admin']}>
+                              <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
                                 <Owners />
                               </ProtectedRoute>
                             }
                           />
+
+                          {/* Halaman Khusus Super Admin (Founder & Co-Founder) */}
                           <Route
                             path="/profit-sharing"
                             element={
-                              <ProtectedRoute allowedRoles={['admin']}>
+                              <ProtectedRoute allowedRoles={['superadmin']}>
                                 <ProfitSharing />
                               </ProtectedRoute>
                             }
@@ -82,7 +84,7 @@ export default function App() {
                           <Route
                             path="/withdrawals"
                             element={
-                              <ProtectedRoute allowedRoles={['admin']}>
+                              <ProtectedRoute allowedRoles={['superadmin']}>
                                 <Withdrawals />
                               </ProtectedRoute>
                             }
@@ -90,7 +92,7 @@ export default function App() {
                           <Route
                             path="/users"
                             element={
-                              <ProtectedRoute allowedRoles={['admin']}>
+                              <ProtectedRoute allowedRoles={['superadmin']}>
                                 <Users />
                               </ProtectedRoute>
                             }

@@ -26,7 +26,14 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   }
 
   // Jika role dibatasi dan user tidak memenuhi role yang diizinkan
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(user?.role)) {
+  const userRole = user?.role || 'staff';
+  const isSuper = userRole === 'superadmin' || ['muhbar', 'nessa', 'akbar', 'nesa', 'admin'].includes(user?.username?.toLowerCase());
+  
+  const hasAccess = !allowedRoles || allowedRoles.length === 0 ||
+    (isSuper) ||
+    allowedRoles.includes(userRole);
+
+  if (!hasAccess) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-6 animate-scale-in">
         <div className="max-w-md w-full text-center p-8 rounded-3xl dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 shadow-xl">
@@ -37,7 +44,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
           </div>
           <h2 className="text-xl font-bold dark:text-white text-gray-900 mb-2">Akses Terbatas (403)</h2>
           <p className="text-sm dark:text-gray-400 text-gray-600 mb-6">
-            Halaman ini bersifat rahasia dan hanya dapat diakses oleh <span className="font-semibold text-accent">Admin</span> (Founder & Co-Founder). Akun Anda ({user?.username}) berstatus sebagai <span className="font-semibold text-purple">{user?.title || user?.role}</span>.
+            Halaman ini bersifat terbatas untuk <span className="font-semibold text-accent">Super Admin</span>. Akun Anda ({user?.username}) berstatus sebagai <span className="font-semibold text-purple">{user?.title || user?.role}</span>.
           </p>
           <Link to="/">
             <Button className="w-full">
