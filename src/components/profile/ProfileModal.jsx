@@ -10,10 +10,7 @@ export default function ProfileModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'password'
 
   // Profile Form State
-  const [profileForm, setProfileForm] = useState({
-    name: '',
-    title: '',
-  });
+  const [name, setName] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
 
   // Password Form State
@@ -29,10 +26,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (isOpen && user) {
-      setProfileForm({
-        name: user.name || user.username || '',
-        title: user.title || '',
-      });
+      setName(user.name || user.username || '');
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
@@ -45,7 +39,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
-    if (!profileForm.name.trim()) {
+    if (!name.trim()) {
       toast.error('Nama lengkap tidak boleh kosong');
       return;
     }
@@ -53,8 +47,7 @@ export default function ProfileModal({ isOpen, onClose }) {
     setProfileLoading(true);
     try {
       await updateMyProfile({
-        name: profileForm.name,
-        title: profileForm.title,
+        name: name.trim(),
       });
       onClose();
     } catch (err) {
@@ -110,14 +103,14 @@ export default function ProfileModal({ isOpen, onClose }) {
     <Modal
       isOpen={isOpen}
       onClose={() => !profileLoading && !passwordLoading && onClose()}
-      title="Pengaturan Akun & Profil Saya"
-      size="md"
+      title="Pengaturan Akun & Profil"
+      size="sm"
     >
       <div className="space-y-4">
         {/* User Card Overview */}
-        <div className="p-4 rounded-2xl dark:bg-surface-300/60 bg-gray-50 border dark:border-white/5 border-gray-200 flex items-center gap-3.5">
+        <div className="p-3.5 rounded-2xl dark:bg-surface-300/60 bg-gray-50 border dark:border-white/5 border-gray-200 flex items-start gap-3">
           <div
-            className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-base uppercase shadow-sm
+            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm uppercase shrink-0
               ${
                 isSuperAdmin
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
@@ -129,13 +122,13 @@ export default function ProfileModal({ isOpen, onClose }) {
             {user.username?.charAt(0) || '?'}
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-base dark:text-white text-gray-900 truncate">
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
+              <h3 className="font-bold text-sm dark:text-white text-gray-900 truncate">
                 {user.name || user.username}
               </h3>
               <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
                   isSuperAdmin
                     ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                     : isLimitedAdmin
@@ -143,11 +136,11 @@ export default function ProfileModal({ isOpen, onClose }) {
                     : 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
                 }`}
               >
-                {isSuperAdmin ? '🛡️ Super Admin' : isLimitedAdmin ? '👔 Admin' : '👤 Staff'}
+                {isSuperAdmin ? 'Super Admin' : isLimitedAdmin ? 'Admin' : 'Staff'}
               </span>
             </div>
-            <p className="text-xs dark:text-gray-400 text-gray-500 font-mono mt-0.5 truncate">
-              @{user.username} · {user.email}
+            <p className="text-[11px] dark:text-gray-400 text-gray-500 font-mono truncate">
+              @{user.username}
             </p>
           </div>
         </div>
@@ -157,7 +150,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'profile'
                 ? 'bg-accent text-white shadow-sm'
                 : 'dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900'
@@ -169,7 +162,7 @@ export default function ProfileModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={() => setActiveTab('password')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               activeTab === 'password'
                 ? 'bg-accent text-white shadow-sm'
                 : 'dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900'
@@ -187,13 +180,13 @@ export default function ProfileModal({ isOpen, onClose }) {
           <form onSubmit={handleProfileSubmit} className="space-y-3.5 animate-fade-in">
             <div>
               <label className="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">
-                Username (Tetap)
+                Username (Akun Login)
               </label>
               <input
                 type="text"
                 disabled
                 value={`@${user.username}`}
-                className="w-full px-4 py-2.5 rounded-xl text-sm opacity-60 cursor-not-allowed
+                className="w-full px-3.5 py-2.5 rounded-xl text-xs opacity-60 cursor-not-allowed
                   dark:bg-surface-300 bg-gray-100 dark:text-gray-300 text-gray-600 border dark:border-white/5 border-gray-200 font-mono"
               />
             </div>
@@ -201,15 +194,8 @@ export default function ProfileModal({ isOpen, onClose }) {
             <Input
               label="Nama Lengkap *"
               placeholder="Contoh: Akbar / Siti Rahma"
-              value={profileForm.name}
-              onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-            />
-
-            <Input
-              label="Jabatan / Posisi"
-              placeholder="Contoh: Host Live & Staff / Founder & Super Admin"
-              value={profileForm.title}
-              onChange={(e) => setProfileForm({ ...profileForm, title: e.target.value })}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
             />
 
             <div className="pt-3 flex justify-end gap-2 border-t dark:border-white/5 border-gray-200">
@@ -227,9 +213,9 @@ export default function ProfileModal({ isOpen, onClose }) {
         {/* TAB 2: GANTI PASSWORD */}
         {/* ========================================================================= */}
         {activeTab === 'password' && (
-          <form onSubmit={handlePasswordSubmit} className="space-y-3.5 animate-fade-in">
-            <p className="text-xs dark:text-gray-400 text-gray-500">
-              Masukkan password saat ini untuk memverifikasi identitas Anda sebelum mengubah password baru.
+          <form onSubmit={handlePasswordSubmit} className="space-y-3 animate-fade-in">
+            <p className="text-[11px] dark:text-gray-400 text-gray-500">
+              Masukkan password saat ini untuk memverifikasi akun sebelum membuat password baru.
             </p>
 
             {/* Current Password */}
@@ -237,7 +223,7 @@ export default function ProfileModal({ isOpen, onClose }) {
               <Input
                 type={showCurrentPassword ? 'text' : 'password'}
                 label="Password Saat Ini *"
-                placeholder="Masukkan password akun Anda saat ini"
+                placeholder="Masukkan password lama"
                 value={passwordForm.currentPassword}
                 onChange={(e) => {
                   setPasswordForm({ ...passwordForm, currentPassword: e.target.value });
@@ -250,9 +236,9 @@ export default function ProfileModal({ isOpen, onClose }) {
               <button
                 type="button"
                 onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                className="absolute right-3 top-9 text-gray-400 hover:text-white text-xs p-1"
+                className="absolute right-3 top-8 text-gray-400 hover:text-white text-xs p-1"
               >
-                {showCurrentPassword ? 'Sembunyikan' : 'Lihat'}
+                {showCurrentPassword ? '🙈' : '👁️'}
               </button>
             </div>
 
@@ -274,9 +260,9 @@ export default function ProfileModal({ isOpen, onClose }) {
               <button
                 type="button"
                 onClick={() => setShowNewPassword(!showNewPassword)}
-                className="absolute right-3 top-9 text-gray-400 hover:text-white text-xs p-1"
+                className="absolute right-3 top-8 text-gray-400 hover:text-white text-xs p-1"
               >
-                {showNewPassword ? 'Sembunyikan' : 'Lihat'}
+                {showNewPassword ? '🙈' : '👁️'}
               </button>
             </div>
 
@@ -284,7 +270,7 @@ export default function ProfileModal({ isOpen, onClose }) {
             <Input
               type={showNewPassword ? 'text' : 'password'}
               label="Konfirmasi Password Baru *"
-              placeholder="Ulangi password baru di atas"
+              placeholder="Ulangi password baru"
               value={passwordForm.confirmPassword}
               onChange={(e) => {
                 setPasswordForm({ ...passwordForm, confirmPassword: e.target.value });

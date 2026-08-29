@@ -175,8 +175,8 @@ export default function Sidebar() {
                   {user.name || user.username}
                 </p>
               </div>
-              <p className="text-[11px] dark:text-gray-400 text-gray-500 truncate">
-                {user.title || (isSuperAdmin ? 'Super Admin' : isLimitedAdmin ? 'Admin' : 'Staff')}
+              <p className="text-[11px] dark:text-gray-400 text-gray-500 truncate font-mono">
+                @{user.username}
               </p>
             </div>
             <div className="flex flex-col items-end gap-0.5">
