@@ -150,12 +150,13 @@ export function SalesProvider({ children }) {
   const addTransaction = async (data) => {
     try {
       let schemeToUse = profitSharingConfig;
-      if (data.ownerCustomScheme) {
+      const customScheme = data.skemaCustom || data.ownerCustomScheme;
+      if (customScheme) {
         schemeToUse = {};
         Object.keys(profitSharingConfig).forEach((k) => {
           schemeToUse[k] = {
             ...profitSharingConfig[k],
-            percentage: Number(data.ownerCustomScheme[k] || 0),
+            percentage: Number(customScheme[k] || 0),
           };
         });
       }
@@ -177,7 +178,8 @@ export function SalesProvider({ children }) {
         profit,
         status: data.status || 'Terjual',
         profitSharing: sharing,
-        ownerCustomScheme: data.ownerCustomScheme || null,
+        ownerCustomScheme: customScheme || null,
+        skemaCustom: customScheme || null,
         createdAt: new Date().toISOString(),
       };
 
@@ -247,12 +249,13 @@ export function SalesProvider({ children }) {
   const updateTransaction = async (id, data) => {
     try {
       let schemeToUse = profitSharingConfig;
-      if (data.ownerCustomScheme) {
+      const customScheme = data.skemaCustom || data.ownerCustomScheme;
+      if (customScheme) {
         schemeToUse = {};
         Object.keys(profitSharingConfig).forEach((k) => {
           schemeToUse[k] = {
             ...profitSharingConfig[k],
-            percentage: Number(data.ownerCustomScheme[k] || 0),
+            percentage: Number(customScheme[k] || 0),
           };
         });
       }
@@ -272,7 +275,8 @@ export function SalesProvider({ children }) {
         sellingPrice: Number(data.sellingPrice),
         profit,
         profitSharing: sharing,
-        ownerCustomScheme: data.ownerCustomScheme || null,
+        ownerCustomScheme: customScheme || null,
+        skemaCustom: customScheme || null,
         updatedAt: new Date().toISOString(),
       };
 
