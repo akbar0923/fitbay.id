@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   useEffect(() => {
@@ -7,7 +8,9 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
     } else {
       document.body.style.overflow = '';
     }
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -27,20 +30,21 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
     xl: 'max-w-4xl',
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-fade-in">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
-      {/* Modal Content */}
-      <div className={`relative w-full ${sizeClasses[size]} 
-        dark:bg-surface-200 bg-white
-        dark:border dark:border-white/10 border border-gray-200
-        rounded-2xl shadow-2xl animate-scale-in
-        max-h-[90vh] flex flex-col`}
+      {/* Modal Card — Centered in whole viewport */}
+      <div
+        className={`relative w-full ${sizeClasses[size] || 'max-w-lg'} 
+          dark:bg-surface-200 bg-white
+          dark:border dark:border-white/10 border border-gray-200
+          rounded-2xl shadow-2xl animate-scale-in
+          max-h-[90vh] flex flex-col z-10`}
       >
         {/* Header */}
         {title && (
@@ -60,10 +64,10 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
         )}
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-4">
-          {children}
-        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-5">{children}</div>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
