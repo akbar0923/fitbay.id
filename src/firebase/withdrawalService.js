@@ -69,6 +69,8 @@ export async function addWithdrawalDoc(data) {
   const newDoc = {
     recipientKey: data.recipientKey,
     recipientName: data.recipientName,
+    recipientCategory: data.recipientCategory || (data.recipientKey === 'pemilikBarang' || String(data.recipientKey).startsWith('owner_') ? 'owner' : (data.recipientKey === 'operational' ? 'operational' : 'team')),
+    ownerName: data.ownerName || (String(data.recipientKey).startsWith('owner_') ? String(data.recipientKey).replace('owner_', '') : (data.recipientKey === 'pemilikBarang' ? 'Semua Pemilik' : null)),
     date: data.date,
     amount: amount, // Nominal asli yang memotong saldo
     roundingAmount: roundingAmount, // Nominal pembulatan

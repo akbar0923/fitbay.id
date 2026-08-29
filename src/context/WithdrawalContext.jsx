@@ -75,9 +75,37 @@ export function WithdrawalProvider({ children }) {
     withdrawals.forEach((w) => {
       const key = (w.recipientKey || w.recipientName || '').toLowerCase();
       map[key] = (map[key] || 0) + (Number(w.amount) || 0);
+
+      // Jika ada ownerName spesifik, petakan juga ke owner_
+      if (w.ownerName && w.ownerName !== 'Semua Pemilik') {
+        const ownerK = `owner_${w.ownerName.toLowerCase().trim()}`;
+        map[ownerK] = (map[ownerK] || 0) + (Number(w.amount) || 0);
+      }
     });
     return map;
   }, [withdrawals]);
+
+  /**
+   * Mendapatkan total nominal yang sudah ditarik khusus oleh pemilik barang tertentu
+   * @param {string} ownerName - e.g. 'Ritza', 'Nesa', 'Budi'
+   * @returns {number}
+   */
+  const getTotalWithdrawnByOwner = (ownerName) => {
+    if (!ownerName) return 0;
+    const cleanName = ownerName.trim().toLowerCase();
+    
+    return withdrawals.reduce((sum, w) => {
+      const wOwner = (w.ownerName || '').trim().toLowerCase();
+      const wKey = (w.recipientKey || '').trim().toLowerCase();
+      const wName = (w.recipientName || '').trim().toLowerCase();
+
+      // Cek apakah penarikan ini ditujukan untuk ownerName ini
+      if (wOwner === cleanName || wKey === `owner_${cleanName}` || (wKey.startsWith('owner_') && wKey.includes(cleanName))) {
+        return sum + (Number(w.amount) || 0);
+      }
+      return sum;
+    }, 0);
+  };
 
   /**
    * Mendapatkan total nominal yang sudah ditarik oleh penerima tertentu
@@ -86,6 +114,23 @@ export function WithdrawalProvider({ children }) {
    */
   const getTotalWithdrawn = (recipientKey) => {
     const key = (recipientKey || '').toLowerCase();
+    
+    // Jika 'pemilikBarang', gabungkan seluruh penarikan kategori pemilik barang (baik per nama maupun global)
+    if (key === 'pemilikbarang') {
+      return withdrawals.reduce((sum, w) => {
+        const isOwnerCategory = 
+          w.recipientKey === 'pemilikBarang' || 
+          (w.recipientKey || '').startsWith('owner_') || 
+          w.recipientCategory === 'owner' ||
+          (w.ownerName && w.ownerName.length > 0);
+        
+        if (isOwnerCategory) {
+          return sum + (Number(w.amount) || 0);
+        }
+        return sum;
+      }, 0);
+    }
+
     return totalWithdrawnByRecipient[key] || 0;
   };
 
@@ -107,6 +152,7 @@ export function WithdrawalProvider({ children }) {
     updateWithdrawal,
     deleteWithdrawal,
     getTotalWithdrawn,
+    getTotalWithdrawnByOwner,
     getRemainingBalance,
     totalWithdrawnByRecipient,
     refreshWithdrawals: loadWithdrawals,
