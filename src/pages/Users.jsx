@@ -182,6 +182,7 @@ export default function Users() {
     setSelectedUser(targetUser);
     setEditFormData({
       name: targetUser.name || '',
+      email: targetUser.email || usernameToInternalEmail(targetUser.username),
       role: targetUser.role || USER_ROLES.STAFF,
       title: targetUser.title || '',
       status: targetUser.status || 'active',
@@ -207,6 +208,7 @@ export default function Users() {
 
       const updatePayload = {
         name: editFormData.name.trim(),
+        email: editFormData.email ? editFormData.email.trim().toLowerCase() : undefined,
         username: selectedUser.username,
         role: editFormData.role,
         title: editFormData.title.trim() || defaultTitle,
@@ -832,6 +834,14 @@ export default function Users() {
             label="Nama Lengkap *"
             value={editFormData.name}
             onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+          />
+
+          <Input
+            type="email"
+            label="Email Aktif (Email Pribadi / Gmail)"
+            placeholder="Contoh: user@gmail.com"
+            value={editFormData.email}
+            onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

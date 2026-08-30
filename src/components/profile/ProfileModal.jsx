@@ -11,6 +11,7 @@ export default function ProfileModal({ isOpen, onClose }) {
 
   // Profile Form State
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
 
   // Password Form State
@@ -28,6 +29,7 @@ export default function ProfileModal({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen && user) {
       setName(user.name || user.username || '');
+      setEmail(user.email || '');
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
@@ -52,6 +54,7 @@ export default function ProfileModal({ isOpen, onClose }) {
     try {
       await updateMyProfile({
         name: name.trim(),
+        email: email.trim(),
       });
       onClose();
     } catch (err) {
@@ -207,6 +210,19 @@ export default function ProfileModal({ isOpen, onClose }) {
               />
               <p className="text-[11px] dark:text-gray-500 text-gray-400">
                 Nama ini akan ditampilkan di pojok kiri bawah, pencatatan transaksi, dan riwayat sistem.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Input
+                type="email"
+                label="Email Aktif (Email Pribadi / Gmail)"
+                placeholder="Contoh: namaanda@gmail.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <p className="text-[11px] dark:text-gray-500 text-gray-400">
+                Gunakan email asli (seperti Gmail/Yahoo) agar dapat menerima link reset password jika lupa sandi.
               </p>
             </div>
 

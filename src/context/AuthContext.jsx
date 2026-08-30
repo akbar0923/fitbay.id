@@ -170,13 +170,14 @@ export function AuthProvider({ children }) {
   };
 
   /**
-   * Mengupdate profil mandiri (Nama Lengkap & Jabatan)
+   * Mengupdate profil mandiri (Nama Lengkap, Jabatan, dan Email Asli)
    */
-  const updateMyProfile = async ({ name, title }) => {
+  const updateMyProfile = async ({ name, title, email }) => {
     if (!user?.uid) throw new Error('User belum login');
     const updatePayload = {
       name: name.trim(),
-      title: title.trim(),
+      ...(title ? { title: title.trim() } : {}),
+      ...(email ? { email: email.trim().toLowerCase() } : {}),
     };
 
     await updateUserProfileData(user.uid, updatePayload);
