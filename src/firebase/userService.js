@@ -4,8 +4,9 @@ import {
   getDoc,
   setDoc,
   getDocs,
-  updateDoc,
   deleteDoc,
+  query,
+  where,
   onSnapshot,
 } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
@@ -22,7 +23,6 @@ import { DEFAULT_USER_PROFILES, USER_ROLES } from '../constants/profitSharingCon
 
 const COLLECTION_NAME = 'users';
 const LOCAL_STORAGE_KEY = 'fitbay_users_cache';
-const SUPER_ADMIN_USERNAMES = ['muhbar', 'nessa', 'admin', 'akbar', 'nesa'];
 const EMAIL_DOMAIN = import.meta.env.VITE_AUTH_EMAIL_DOMAIN || 'fitbay.id';
 
 /**
@@ -43,6 +43,16 @@ export function usernameToInternalEmail(username) {
 export function getDefaultTeamUsers() {
   return [
     {
+      uid: 'user-muhbar-default',
+      name: 'Akbar',
+      username: 'muhbar',
+      email: usernameToInternalEmail('muhbar'),
+      role: USER_ROLES.SUPER_ADMIN,
+      title: 'Founder & Super Admin',
+      status: 'active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    {
       uid: 'user-akbar-default',
       name: 'Akbar',
       username: 'akbar',
@@ -53,10 +63,10 @@ export function getDefaultTeamUsers() {
       createdAt: '2026-01-01T00:00:00.000Z',
     },
     {
-      uid: 'user-nesa-default',
+      uid: 'user-nessa-default',
       name: 'Nessa',
-      username: 'nesa',
-      email: usernameToInternalEmail('nesa'),
+      username: 'nessa',
+      email: usernameToInternalEmail('nessa'),
       role: USER_ROLES.SUPER_ADMIN,
       title: 'Co-Founder & Super Admin',
       status: 'active',
@@ -122,27 +132,40 @@ export function saveLocalUsers(users) {
  * @returns {Promise<object>}
  */
 export async function getUserProfile(uid, username, email) {
-  const docRef = doc(db, COLLECTION_NAME, uid);
   const cleanUsername = (username || '').toLowerCase();
+  const docRef = doc(db, COLLECTION_NAME, uid);
 
   try {
+    // 1. Cek langsung berdasarkan UID dokumen
     const docSnap = await getDoc(docRef);
-
     if (docSnap.exists()) {
       const data = docSnap.data();
       return { uid, status: data.status || 'active', ...data };
+    }
+
+    // 2. Cek apakah ada profil berdasarkan username di Firestore
+    if (cleanUsername) {
+      const q = query(collection(db, COLLECTION_NAME), where('username', '==', cleanUsername));
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) {
+        const foundDoc = qSnap.docs[0];
+        const data = foundDoc.data();
+        // Simpan juga ke doc UID agar referensi selanjutnya instan
+        await setDoc(docRef, { ...data, uid }, { merge: true });
+        return { uid, status: data.status || 'active', ...data };
+      }
     }
   } catch (err) {
     console.warn('Could not read user profile doc from Firestore, using default profile:', err);
   }
 
-  // Auto-provisioning profil awal hanya jika dokumen belum pernah ada di database
-  const isFounder = ['muhbar', 'akbar'].includes(cleanUsername);
+  // 3. Fallback profil bawaan jika belum ada di database
+  const isFounder = ['muhbar', 'akbar', 'nessa', 'nesa', 'admin'].includes(cleanUsername);
   const defaultProfile = DEFAULT_USER_PROFILES[cleanUsername] || {
     name: username || 'User',
     username: cleanUsername,
     role: isFounder ? USER_ROLES.SUPER_ADMIN : USER_ROLES.STAFF,
-    title: isFounder ? 'Founder & Super Admin' : 'Staff Fitbay',
+    title: isFounder ? 'Super Admin' : 'Staff Fitbay',
     status: 'active',
   };
 
@@ -154,7 +177,7 @@ export async function getUserProfile(uid, username, email) {
   };
 
   try {
-    await setDoc(docRef, newProfile);
+    await setDoc(docRef, newProfile, { merge: true });
   } catch (err) {
     console.warn('Could not save user profile doc to Firestore:', err);
   }
@@ -205,26 +228,28 @@ export async function createUserByAdmin({
     console.error('createUserByAdmin Auth error:', error);
     let errorMsg = error.message;
     if (error.code === 'auth/email-already-in-use') {
-      errorMsg = `Username "${cleanUsername}" sudah terdaftar di sistem. Silakan gunakan username lain.`;
+      errorMsg = `Username "${cleanUsername}" sudah terdaftar di Firebase Auth. Akun profil diperbarui.`;
     } else if (error.code === 'auth/weak-password') {
       errorMsg = 'Password terlalu lemah. Gunakan minimal 6 karakter.';
+      throw new Error(errorMsg);
     } else if (error.code === 'auth/invalid-email') {
       errorMsg = 'Format email dari username tidak valid.';
+      throw new Error(errorMsg);
     }
-    throw new Error(errorMsg);
   } finally {
     if (secondaryApp) {
       try { await deleteApp(secondaryApp); } catch (_) { /* ignore */ }
     }
   }
 
+  const effectiveUid = newUid || `user_${cleanUsername}`;
   const userProfileData = {
-    uid: newUid || `user_${cleanUsername}_${Date.now()}`,
+    uid: effectiveUid,
     name: name.trim(),
     username: cleanUsername,
     email: email,
     role: role || USER_ROLES.STAFF,
-    title: title.trim() || (role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
+    title: title.trim() || (role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
     status: 'active',
     createdAt: new Date().toISOString(),
     createdBy: createdBy || 'admin',
@@ -243,14 +268,12 @@ export async function createUserByAdmin({
   }
   saveLocalUsers(updatedLocalUsers);
 
-  // Simpan ke Firestore
-  if (newUid) {
-    try {
-      const userDocRef = doc(db, COLLECTION_NAME, newUid);
-      await setDoc(userDocRef, userProfileData);
-    } catch (firestoreError) {
-      console.warn('Firestore setDoc failed (using local cache backup):', firestoreError);
-    }
+  // Simpan ke Firestore dengan setDoc merge
+  try {
+    const userDocRef = doc(db, COLLECTION_NAME, effectiveUid);
+    await setDoc(userDocRef, userProfileData, { merge: true });
+  } catch (firestoreError) {
+    console.warn('Firestore setDoc failed (using local cache backup):', firestoreError);
   }
 
   return userProfileData;
@@ -259,27 +282,41 @@ export async function createUserByAdmin({
 /**
  * Mengupdate data profil & role pengguna di Firestore & Local Storage
  * @param {string} uid
- * @param {object} updateData - { name, role, title, status }
+ * @param {object} updateData - { name, role, title, status, username }
  */
 export async function updateUserProfileData(uid, updateData) {
   // Update local cache
   const currentUsers = getLocalUsers();
   const updatedUsers = currentUsers.map((u) => {
-    if (u.uid === uid || u.username === updateData.username) {
+    if (u.uid === uid || (updateData.username && u.username?.toLowerCase() === updateData.username.toLowerCase())) {
       return { ...u, ...updateData, updatedAt: new Date().toISOString() };
     }
     return u;
   });
   saveLocalUsers(updatedUsers);
 
-  // Update Firestore
+  // Update Firestore secara andal dengan setDoc merge: true
   try {
-    const docRef = doc(db, COLLECTION_NAME, uid);
     const payload = {
       ...updateData,
       updatedAt: new Date().toISOString(),
     };
-    await updateDoc(docRef, payload);
+
+    // 1. Simpan/update langsung ke dokumen dengan ID uid
+    if (uid) {
+      const docRef = doc(db, COLLECTION_NAME, uid);
+      await setDoc(docRef, payload, { merge: true });
+    }
+
+    // 2. Jika ada username, sinkronkan juga dokumen Firestore yang memiliki username tersebut
+    if (updateData.username) {
+      const cleanUser = updateData.username.trim().toLowerCase();
+      const q = query(collection(db, COLLECTION_NAME), where('username', '==', cleanUser));
+      const querySnap = await getDocs(q);
+      querySnap.forEach(async (docItem) => {
+        await setDoc(doc(db, COLLECTION_NAME, docItem.id), payload, { merge: true });
+      });
+    }
   } catch (err) {
     console.warn('Could not update user in Firestore (saved locally):', err);
   }
@@ -338,10 +375,10 @@ export async function getAllUsers() {
   try {
     const snapshot = await getDocs(collection(db, COLLECTION_NAME));
     if (!snapshot.empty) {
-      const firestoreUsers = snapshot.docs.map((doc) => ({
-        uid: doc.id,
+      const firestoreUsers = snapshot.docs.map((docItem) => ({
+        uid: docItem.id,
         status: 'active',
-        ...doc.data(),
+        ...docItem.data(),
       }));
       saveLocalUsers(firestoreUsers);
       return firestoreUsers;
@@ -353,12 +390,11 @@ export async function getAllUsers() {
 }
 
 /**
- * Subscribe real-time list pengguna dari Firestore dengan fallback lokal instan
+ * Subscribe real-time list pengguna dari Firestore dengan deduplikasi dan merge data tim
  * @param {function} callback
  * @returns {function} unsubscribe function
  */
 export function subscribeUsers(callback) {
-  // Panggil callback segera dengan data lokal agar tabel tidak kosong (0 user)
   const initialLocal = getLocalUsers();
   callback(initialLocal);
 
@@ -367,30 +403,36 @@ export function subscribeUsers(callback) {
     return onSnapshot(
       usersCollection,
       (snapshot) => {
+        const defaultUsers = getDefaultTeamUsers();
+        const userMap = new Map();
+
+        // 1. Masukkan default users terlebih dahulu sebagai base
+        defaultUsers.forEach((u) => {
+          if (u.username) userMap.set(u.username.toLowerCase(), u);
+        });
+
+        // 2. Timpa dengan local cache jika ada perubahan yang tersimpan
+        initialLocal.forEach((u) => {
+          if (u.username) userMap.set(u.username.toLowerCase(), { ...userMap.get(u.username.toLowerCase()), ...u });
+        });
+
+        // 3. Timpa dengan data Firestore yang paling mutakhir (realtime dari server)
         if (!snapshot.empty) {
-          const firestoreUsers = snapshot.docs.map((doc) => ({
-            uid: doc.id,
-            status: 'active',
-            ...doc.data(),
-          }));
-
-          // Merge dengan default team users agar akun pendiri tidak pernah hilang
-          const mergedMap = new Map();
-          initialLocal.forEach((u) => {
-            if (u.username) mergedMap.set(u.username.toLowerCase(), u);
+          snapshot.docs.forEach((docItem) => {
+            const data = docItem.data();
+            const cleanUser = (data.username || '').toLowerCase();
+            if (cleanUser) {
+              const prev = userMap.get(cleanUser) || {};
+              userMap.set(cleanUser, { ...prev, ...data, uid: docItem.id });
+            } else {
+              userMap.set(docItem.id, { uid: docItem.id, ...data });
+            }
           });
-          firestoreUsers.forEach((u) => {
-            if (u.username) mergedMap.set(u.username.toLowerCase(), u);
-            else mergedMap.set(u.uid, u);
-          });
-
-          const finalList = Array.from(mergedMap.values());
-          saveLocalUsers(finalList);
-          callback(finalList);
-        } else {
-          // Jika Firestore kosong, gunakan data lokal
-          callback(initialLocal);
         }
+
+        const finalList = Array.from(userMap.values());
+        saveLocalUsers(finalList);
+        callback(finalList);
       },
       (error) => {
         console.warn('Error listening to users collection, using cached local data:', error);

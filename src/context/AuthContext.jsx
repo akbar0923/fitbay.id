@@ -94,51 +94,78 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * Login dengan username dan password
+   * Login dengan username dan password (dengan domain fallback otomatis)
    */
   const login = async (username, password) => {
-    try {
-      const email = usernameToEmail(username);
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      const cleanUser = emailToUsername(result.user.email);
-      
-      // Verifikasi status akun aktif/nonaktif
-      const profile = await getUserProfile(result.user.uid, cleanUser, result.user.email);
-      if (profile.status === 'inactive') {
-        await signOut(auth);
-        throw new Error('Akun Anda telah dinonaktifkan oleh Admin. Silakan hubungi Admin Fitbay.id.');
-      }
+    const rawClean = (username || '').trim().toLowerCase();
+    if (!rawClean) {
+      toast.error('Silakan masukkan username');
+      throw new Error('Username kosong');
+    }
 
-      toast.success(`Selamat datang, ${profile.name || cleanUser}!`);
-      return result.user;
-    } catch (error) {
-      let message = 'Terjadi kesalahan saat login';
-      
-      if (error.message && error.message.includes('dinonaktifkan')) {
-        message = error.message;
-      } else {
-        switch (error.code) {
-          case 'auth/user-not-found':
-          case 'auth/wrong-password':
-          case 'auth/invalid-credential':
-            message = 'Username atau password salah';
-            break;
-          case 'auth/too-many-requests':
-            message = 'Terlalu banyak percobaan login. Coba lagi nanti.';
-            break;
-          case 'auth/network-request-failed':
-            message = 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
-            break;
-          case 'auth/invalid-api-key':
-            message = 'Konfigurasi Firebase tidak valid. Hubungi admin.';
-            break;
-          default:
-            message = `Login gagal: ${error.message}`;
-        }
+    // Daftar kemungkinan format email yang terdaftar di Firebase Auth
+    let candidates = [];
+    if (rawClean.includes('@')) {
+      candidates = [rawClean];
+    } else {
+      candidates = [
+        `${rawClean}@${EMAIL_DOMAIN}`,
+        `${rawClean}@fitbay.id`,
+        `${rawClean}@fitbay.internal`,
+        rawClean === 'admin' ? 'admin@admin.id' : null,
+      ].filter(Boolean);
+      // Hapus duplikat
+      candidates = [...new Set(candidates)];
+    }
+
+    let authResult = null;
+    let lastError = null;
+
+    for (const email of candidates) {
+      try {
+        authResult = await signInWithEmailAndPassword(auth, email, password);
+        if (authResult?.user) break;
+      } catch (err) {
+        lastError = err;
+        // Jika password salah pada user yang ditemukan, tidak perlu coba domain lain
+        if (err.code === 'auth/wrong-password') break;
+      }
+    }
+
+    if (!authResult || !authResult.user) {
+      let message = 'Username atau password salah';
+      if (lastError?.message && lastError.message.includes('dinonaktifkan')) {
+        message = lastError.message;
+      } else if (lastError?.code === 'auth/too-many-requests') {
+        message = 'Terlalu banyak percobaan login. Coba lagi nanti.';
+      } else if (lastError?.code === 'auth/network-request-failed') {
+        message = 'Gagal terhubung ke server. Periksa koneksi internet Anda.';
+      } else if (lastError?.code === 'auth/invalid-api-key') {
+        message = 'Konfigurasi Firebase tidak valid. Hubungi admin.';
       }
       
       toast.error(message);
       throw new Error(message);
+    }
+
+    try {
+      const cleanUser = emailToUsername(authResult.user.email);
+      // Verifikasi status akun aktif/nonaktif
+      const profile = await getUserProfile(authResult.user.uid, cleanUser, authResult.user.email);
+      if (profile.status === 'inactive') {
+        await signOut(auth);
+        const errMsg = 'Akun Anda telah dinonaktifkan oleh Admin. Silakan hubungi Admin Fitbay.id.';
+        toast.error(errMsg);
+        throw new Error(errMsg);
+      }
+
+      toast.success(`Selamat datang, ${profile.name || cleanUser}!`);
+      return authResult.user;
+    } catch (error) {
+      if (error.message && error.message.includes('dinonaktifkan')) {
+        throw error;
+      }
+      return authResult.user;
     }
   };
 

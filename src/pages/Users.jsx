@@ -205,6 +205,7 @@ export default function Users() {
 
       const updatePayload = {
         name: editFormData.name.trim(),
+        username: selectedUser.username,
         role: editFormData.role,
         title: editFormData.title.trim() || defaultTitle,
         status: editFormData.status,
