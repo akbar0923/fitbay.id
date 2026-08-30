@@ -86,21 +86,32 @@ export function getDefaultTeamUsers() {
 }
 
 /**
- * Membaca cache user dari localStorage dengan fallback data tim default
+ * Membaca cache user dari localStorage dengan merge otomatis akun tim default
  */
 export function getLocalUsers() {
+  const defaultUsers = getDefaultTeamUsers();
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        const map = new Map();
+        defaultUsers.forEach((u) => map.set(u.username.toLowerCase(), u));
+        parsed.forEach((u) => {
+          if (u.username) {
+            const prev = map.get(u.username.toLowerCase()) || {};
+            map.set(u.username.toLowerCase(), { ...prev, ...u });
+          } else if (u.uid) {
+            map.set(u.uid, u);
+          }
+        });
+        return Array.from(map.values());
       }
     }
   } catch (e) {
     console.warn('Error reading local users cache:', e);
   }
-  return getDefaultTeamUsers();
+  return defaultUsers;
 }
 
 /**
@@ -404,7 +415,11 @@ export async function getAllUsers() {
  * @returns {function} unsubscribe function
  */
 export function subscribeUsers(callback) {
-  // Auto-seed akun tim default jika belum ada di Firestore
+  // 1. Panggil segera dengan data lokal agar render pertama langsung instan
+  const initialLocal = getLocalUsers();
+  callback(initialLocal);
+
+  // 2. Auto-seed akun tim default jika belum ada di Firestore
   ensureInitialTeamUsersInFirestore().catch(() => {});
 
   const usersCollection = collection(db, COLLECTION_NAME);
@@ -415,12 +430,12 @@ export function subscribeUsers(callback) {
         const defaultUsers = getDefaultTeamUsers();
         const userMap = new Map();
 
-        // 1. Masukkan default users terlebih dahulu sebagai base
+        // Masukkan default users terlebih dahulu sebagai base
         defaultUsers.forEach((u) => {
           if (u.username) userMap.set(u.username.toLowerCase(), u);
         });
 
-        // 2. Timpa dengan data Firestore yang paling mutakhir (realtime dari server)
+        // Timpa dengan data Firestore yang paling mutakhir (realtime dari server)
         if (!snapshot.empty) {
           snapshot.docs.forEach((docItem) => {
             const data = docItem.data();

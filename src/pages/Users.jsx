@@ -63,10 +63,12 @@ export default function Users() {
   useEffect(() => {
     setLoading(true);
     const unsubscribe = subscribeUsers((usersList) => {
-      // Sort users: Admin first, then alphabetically by name
+      // Sort users: Super Admin first, then Admin, then Staff, then alphabetically
       const sorted = [...usersList].sort((a, b) => {
-        if (a.role === 'admin' && b.role !== 'admin') return -1;
-        if (a.role !== 'admin' && b.role === 'admin') return 1;
+        const roleOrder = { superadmin: 1, admin: 2, staff: 3 };
+        const orderA = roleOrder[a.role] || 4;
+        const orderB = roleOrder[b.role] || 4;
+        if (orderA !== orderB) return orderA - orderB;
         return (a.name || '').localeCompare(b.name || '');
       });
       setUsers(sorted);
