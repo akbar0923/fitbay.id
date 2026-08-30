@@ -43,7 +43,7 @@ export function usernameToInternalEmail(username) {
 export function getDefaultTeamUsers() {
   return [
     {
-      uid: 'user-muhbar-default',
+      uid: 'user-muhbar',
       name: 'Akbar',
       username: 'muhbar',
       email: usernameToInternalEmail('muhbar'),
@@ -53,17 +53,7 @@ export function getDefaultTeamUsers() {
       createdAt: '2026-01-01T00:00:00.000Z',
     },
     {
-      uid: 'user-akbar-default',
-      name: 'Akbar',
-      username: 'akbar',
-      email: usernameToInternalEmail('akbar'),
-      role: USER_ROLES.SUPER_ADMIN,
-      title: 'Founder & Super Admin',
-      status: 'active',
-      createdAt: '2026-01-01T00:00:00.000Z',
-    },
-    {
-      uid: 'user-nessa-default',
+      uid: 'user-nessa',
       name: 'Nessa',
       username: 'nessa',
       email: usernameToInternalEmail('nessa'),
@@ -73,7 +63,7 @@ export function getDefaultTeamUsers() {
       createdAt: '2026-01-01T00:00:00.000Z',
     },
     {
-      uid: 'user-andin-default',
+      uid: 'user-andin',
       name: 'Andin',
       username: 'andin',
       email: usernameToInternalEmail('andin'),
@@ -83,7 +73,7 @@ export function getDefaultTeamUsers() {
       createdAt: '2026-01-01T00:00:00.000Z',
     },
     {
-      uid: 'user-ritza-default',
+      uid: 'user-ritza',
       name: 'Ritza',
       username: 'ritza',
       email: usernameToInternalEmail('ritza'),
@@ -121,6 +111,25 @@ export function saveLocalUsers(users) {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(users));
   } catch (e) {
     console.warn('Error saving local users cache:', e);
+  }
+}
+
+/**
+ * Memastikan akun tim awal ada di Firestore
+ */
+export async function ensureInitialTeamUsersInFirestore() {
+  try {
+    const defaultUsers = getDefaultTeamUsers();
+    for (const u of defaultUsers) {
+      const q = query(collection(db, COLLECTION_NAME), where('username', '==', u.username.toLowerCase()));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        const docRef = doc(db, COLLECTION_NAME, u.uid);
+        await setDoc(docRef, u, { merge: true });
+      }
+    }
+  } catch (e) {
+    console.warn('Error auto-seeding team users to Firestore:', e);
   }
 }
 
@@ -395,8 +404,8 @@ export async function getAllUsers() {
  * @returns {function} unsubscribe function
  */
 export function subscribeUsers(callback) {
-  const initialLocal = getLocalUsers();
-  callback(initialLocal);
+  // Auto-seed akun tim default jika belum ada di Firestore
+  ensureInitialTeamUsersInFirestore().catch(() => {});
 
   const usersCollection = collection(db, COLLECTION_NAME);
   try {
@@ -411,12 +420,7 @@ export function subscribeUsers(callback) {
           if (u.username) userMap.set(u.username.toLowerCase(), u);
         });
 
-        // 2. Timpa dengan local cache jika ada perubahan yang tersimpan
-        initialLocal.forEach((u) => {
-          if (u.username) userMap.set(u.username.toLowerCase(), { ...userMap.get(u.username.toLowerCase()), ...u });
-        });
-
-        // 3. Timpa dengan data Firestore yang paling mutakhir (realtime dari server)
+        // 2. Timpa dengan data Firestore yang paling mutakhir (realtime dari server)
         if (!snapshot.empty) {
           snapshot.docs.forEach((docItem) => {
             const data = docItem.data();
@@ -441,7 +445,7 @@ export function subscribeUsers(callback) {
     );
   } catch (e) {
     console.warn('Failed to attach onSnapshot listener:', e);
-    callback(initialLocal);
+    callback(getDefaultTeamUsers());
     return () => {};
   }
 }
