@@ -103,8 +103,11 @@ export default function Login() {
                   type="text"
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setError(''); }}
-                  placeholder="Masukkan username"
+                  placeholder="Masukkan username atau email"
                   autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
                   autoFocus
                   className="w-full pl-11 pr-4 py-3 rounded-xl text-sm
                     dark:bg-white/5 bg-gray-100 
@@ -134,6 +137,9 @@ export default function Login() {
                   onChange={(e) => { setPassword(e.target.value); setError(''); }}
                   placeholder="Masukkan password"
                   autoComplete="current-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
                   className="w-full pl-11 pr-11 py-3 rounded-xl text-sm
                     dark:bg-white/5 bg-gray-100 
                     dark:text-white text-gray-900
