@@ -17,42 +17,54 @@ service cloud.firestore {
     }
 
     // 1. Transaksi Penjualan
-    // Staff & Admin bisa membaca, menambah, dan mengedit
-    // HANYA Admin yang berhak MENGHAPUS transaksi
+    // Read diizinkan publik (untuk rekonsiliasi portal pemilik)
+    // Staff & Admin bisa menambah dan mengedit, HANYA Admin yang berhak menghapus
     match /transactions/{transactionId} {
-      allow read, create, update: if isAuthenticated();
+      allow read: if true;
+      allow create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
     
-    // 2. Pemilik Barang (Titipan)
-    // Semua tim yang login bisa melihat dan menambah
-    // HANYA Admin yang berhak menghapus
-    match /owners/{ownerId} {
-      allow read, create, update: if isAuthenticated();
+    // 2. Data Inventaris & Stok Barang
+    // Read diizinkan publik (untuk cek status barang titipan)
+    // Staff & Admin bisa menambah dan mengedit, HANYA Admin yang berhak menghapus
+    match /inventory/{itemId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 
-    // 3. Profil Pengguna & Role
-    // Pengguna yang login bisa membaca profil tim & update profilnya
+    // 3. Pemilik Barang (Titipan)
+    // Read diizinkan publik (untuk verifikasi data pemilik di portal)
+    // Staff & Admin bisa menambah/edit, HANYA Admin yang berhak menghapus
+    match /owners/{ownerId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // 4. Riwayat Penarikan Saldo
+    // Read diizinkan publik (untuk riwayat pencairan pemilik)
+    // HANYA Admin yang berhak mencatat/mengubah/menghapus penarikan
+    match /withdrawals/{withdrawalId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 5. Profil Pengguna & Hak Akses (Sensitif)
+    // Pengguna yang login bisa membaca profil tim & update profilnya sendiri
     match /users/{userId} {
       allow read, create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 
-    // 4. Penarikan Saldo Bagi Hasil (Keuangan Sensitif)
-    // HANYA Admin yang bisa melihat riwayat, mencatat, mengedit, dan menghapus penarikan
-    match /withdrawals/{withdrawalId} {
-      allow read, write: if isAdmin();
-    }
-
-    // 5. Pengaturan Sistem (Persentase Pembagian Hasil)
-    // Semua tim bisa membaca persentase aktif, tetapi HANYA Admin yang bisa mengubah
+    // 6. Pengaturan Sistem (Persentase Pembagian Hasil)
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
     
-    // Blokir total untuk akses tanpa login atau koleksi liar
+    // Blokir total untuk koleksi liar lainnya
     match /{document=**} {
       allow read, write: if false;
     }

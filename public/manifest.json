@@ -1,0 +1,24 @@
+{
+  "name": "Fitbay.id — Finance & Stock Tracker",
+  "short_name": "Fitbay.id",
+  "description": "Aplikasi Manajemen Stok, Penjualan Live & Bagi Hasil Fitbay.id",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0F0F0F",
+  "theme_color": "#0F0F0F",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

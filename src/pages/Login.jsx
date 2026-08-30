@@ -193,10 +193,22 @@ export default function Login() {
             </button>
           </form>
 
+          {/* Link Portal Penitip Barang */}
+          <div className="mt-6 pt-6 border-t dark:border-white/5 border-gray-100 text-center">
+            <Link
+              to="/cek-barang"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold dark:bg-white/5 bg-gray-50 hover:dark:bg-white/10 hover:bg-gray-100 border dark:border-white/5 border-gray-200 text-accent transition-all duration-200 group"
+            >
+              <span>📦</span>
+              <span>Titip Jual Barang? <strong>Cek Saldo di Sini</strong></span>
+              <span className="transition-transform group-hover:translate-x-0.5">→</span>
+            </Link>
+          </div>
+
           {/* Footer */}
-          <div className="mt-8 text-center">
+          <div className="mt-6 text-center">
             <p className="text-[11px] dark:text-gray-600 text-gray-400">
-              Website internal Fitbay.id — Akses terbatas
+              Fitbay.id — Finance & Consignment Management System
             </p>
           </div>
         </div>

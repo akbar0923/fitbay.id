@@ -7,6 +7,7 @@ import { WithdrawalProvider } from './context/WithdrawalContext';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import Layout from './components/layout/Layout';
 import Login from './pages/Login';
+import OwnerPortal from './pages/OwnerPortal';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import SalesData from './pages/SalesData';
@@ -15,12 +16,14 @@ import ProfitSharing from './pages/ProfitSharing';
 import Withdrawals from './pages/Withdrawals';
 import Users from './pages/Users';
 import Reports from './pages/Reports';
+import PwaInstallPrompt from './components/common/PwaInstallPrompt';
 import { Toaster } from 'react-hot-toast';
 
 export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
+        <PwaInstallPrompt />
         <Toaster
           position="top-right"
           toastOptions={{
@@ -50,6 +53,10 @@ export default function App() {
         <Routes>
           {/* Login — publik tanpa layout */}
           <Route path="/login" element={<Login />} />
+
+          {/* Portal Cek Barang & Saldo Khusus Penitip (Publik) */}
+          <Route path="/cek-barang" element={<OwnerPortal />} />
+          <Route path="/portal-pemilik" element={<OwnerPortal />} />
 
           {/* Protected App Routes */}
           <Route
