@@ -60,7 +60,7 @@ export default function InventoryFormModal({ isOpen, onClose, onSubmit, editData
       setIsAddingOwner(false);
       setNewOwnerName('');
     }
-  }, [isOpen, editData, owners]);
+  }, [isOpen, editData]);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));

@@ -93,7 +93,7 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
     setErrors({});
     setIsAddingOwner(false);
     setNewOwnerName('');
-  }, [editData, isOpen, owners]);
+  }, [editData, isOpen]);
 
   const selectedOwner = useMemo(() => {
     return owners.find(

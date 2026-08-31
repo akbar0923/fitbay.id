@@ -293,12 +293,16 @@ export async function updateInventoryItem(id, updateData) {
 
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await updateDoc(docRef, {
-      ...updateData,
-      updatedAt: new Date().toISOString(),
-    });
+    await setDoc(
+      docRef,
+      {
+        ...updateData,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   } catch (err) {
-    console.warn('Firestore updateDoc for inventory failed:', err);
+    console.warn('Firestore setDoc for inventory failed:', err);
   }
 
   return updated.find((i) => i.id === id);

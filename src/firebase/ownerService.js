@@ -165,7 +165,7 @@ export async function updateOwnerDoc(id, data) {
 
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await updateDoc(docRef, cleanData);
+    await setDoc(docRef, cleanData, { merge: true });
   } catch (err) {
     console.warn('Firestore update failed, updating locally:', err);
   }

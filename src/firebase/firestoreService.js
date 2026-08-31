@@ -50,9 +50,9 @@ export async function addTransactionDoc(data) {
  */
 export async function updateTransactionDoc(id, data) {
   const docRef = doc(db, COLLECTION_NAME, id);
-  // Hapus field id dari data sebelum update (id adalah document key, bukan field)
+  // Hapus field id dari data sebelum update
   const { id: _, ...updateData } = data;
-  await updateDoc(docRef, updateData);
+  await setDoc(docRef, updateData, { merge: true });
   return { id, ...updateData };
 }
 
