@@ -364,6 +364,15 @@ export function SalesProvider({ children }) {
       .reduce((sum, tx) => sum + tx.profit, 0);
   };
 
+  const loadTransactions = async () => {
+    try {
+      const data = await getTransactions();
+      dispatch({ type: ACTIONS.SET_TRANSACTIONS, payload: data });
+    } catch (err) {
+      console.error('Error loading transactions:', err);
+    }
+  };
+
   const value = {
     transactions: state.transactions,
     loading,
