@@ -18,6 +18,7 @@ import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import { SkeletonTable } from '../ui/Skeleton';
 import ShippingLabelModal from './ShippingLabelModal';
+import BulkEditSalesModal from './BulkEditSalesModal';
 import BulkActionBar from '../common/BulkActionBar';
 import toast from 'react-hot-toast';
 
@@ -29,6 +30,7 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   // Selection States
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const [search, setSearch] = useState('');
@@ -843,12 +845,26 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
             deleteLabel="Hapus Transaksi Terpilih"
             actions={[
               {
+                label: 'Edit Terpilih',
+                icon: '✏️',
+                variant: 'primary',
+                onClick: () => setIsBulkEditOpen(true),
+              },
+              {
                 label: 'Export Terpilih (Excel/CSV)',
                 icon: '📊',
                 variant: 'secondary',
                 onClick: handleExportSelected,
               },
             ]}
+          />
+
+          {/* Modal Edit Massal Transaksi */}
+          <BulkEditSalesModal
+            isOpen={isBulkEditOpen}
+            onClose={() => setIsBulkEditOpen(false)}
+            selectedTransactions={transactions.filter((t) => selectedIds.has(t.id))}
+            onSuccess={() => setSelectedIds(new Set())}
           />
 
           {/* Modal Konfirmasi Hapus Massal Transaksi */}
