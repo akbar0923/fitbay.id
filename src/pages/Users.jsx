@@ -208,7 +208,7 @@ export default function Users() {
 
       const updatePayload = {
         name: editFormData.name.trim(),
-        email: editFormData.email ? editFormData.email.trim().toLowerCase() : undefined,
+        email: (editFormData.email || '').trim().toLowerCase() || usernameToInternalEmail(selectedUser.username),
         username: selectedUser.username,
         role: editFormData.role,
         title: editFormData.title.trim() || defaultTitle,
@@ -219,7 +219,7 @@ export default function Users() {
 
       setUsers((prev) =>
         prev.map((u) =>
-          u.uid === selectedUser.uid || (u.username && u.username === selectedUser.username)
+          u.uid === selectedUser.uid || (u.username && u.username.toLowerCase() === selectedUser.username.toLowerCase())
             ? { ...u, ...updatePayload }
             : u
         )
@@ -491,12 +491,12 @@ export default function Users() {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="dark:bg-white/[0.03] bg-gray-50 border-b dark:border-white/5 border-gray-200">
-              <tr>
-                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Pengguna</th>
-                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Email Internal</th>
-                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Role & Hak Akses</th>
-                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700">Status</th>
-                <th className="px-6 py-4 font-semibold dark:text-gray-300 text-gray-700 text-right">Aksi</th>
+              <tr className="dark:bg-white/[0.02] bg-gray-50/80 border-b dark:border-white/5 border-gray-200 text-xs dark:text-gray-400 text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-4 font-semibold">Pengguna</th>
+                <th className="px-6 py-4 font-semibold">Email / Kontak</th>
+                <th className="px-6 py-4 font-semibold">Role & Hak Akses</th>
+                <th className="px-6 py-4 font-semibold">Status</th>
+                <th className="px-6 py-4 font-semibold text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-white/5 divide-gray-200">
