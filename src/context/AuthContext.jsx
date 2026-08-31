@@ -6,6 +6,7 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
+  updateEmail,
 } from 'firebase/auth';
 import { auth } from '../firebase/firebaseConfig';
 import { getUserProfile, updateUserProfileData } from '../firebase/userService';
@@ -174,14 +175,26 @@ export function AuthProvider({ children }) {
    */
   const updateMyProfile = async ({ name, title, email }) => {
     if (!user?.uid) throw new Error('User belum login');
+    const cleanEmail = email ? email.trim().toLowerCase() : undefined;
     const updatePayload = {
       name: name.trim(),
       ...(title ? { title: title.trim() } : {}),
-      ...(email ? { email: email.trim().toLowerCase() } : {}),
+      ...(cleanEmail ? { email: cleanEmail } : {}),
     };
 
+    // 1. Simpan ke Firestore Database
     await updateUserProfileData(user.uid, updatePayload);
     setUser((prev) => (prev ? { ...prev, ...updatePayload } : prev));
+
+    // 2. Sinkronkan otomatis ke Firebase Authentication Console
+    if (auth.currentUser && cleanEmail && auth.currentUser.email !== cleanEmail) {
+      try {
+        await updateEmail(auth.currentUser, cleanEmail);
+      } catch (authErr) {
+        console.warn('Firebase Auth updateEmail notice:', authErr);
+      }
+    }
+
     toast.success('Profil Anda berhasil diperbarui!');
   };
 
