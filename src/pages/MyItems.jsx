@@ -10,7 +10,7 @@ import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
 export default function MyItems() {
   const { user } = useAuth();
   const { items, loading: inventoryLoading } = useInventory();
-  const { transactions, loading: salesLoading } = useSales();
+  const { transactions, loading: salesLoading, profitSharingConfig } = useSales();
 
   const loading = inventoryLoading || salesLoading;
 

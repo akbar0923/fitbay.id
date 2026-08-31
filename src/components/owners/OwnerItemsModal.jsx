@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from '../../utils/formatCurrency';
 
 export default function OwnerItemsModal({ isOpen, onClose, owner }) {
   const { items } = useInventory();
-  const { transactions } = useSales();
+  const { transactions, profitSharingConfig } = useSales();
   const { getTotalWithdrawnByOwner } = useWithdrawals();
 
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Belum Terjual' | 'Terjual'
