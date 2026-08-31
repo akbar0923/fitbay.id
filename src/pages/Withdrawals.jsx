@@ -465,13 +465,23 @@ export default function Withdrawals() {
   const currentRecipientRemaining = currentRecipientDetails.remaining;
   const previewRemainingAfter = Math.max(0, currentRecipientRemaining - previewAmount);
 
-  // Total summary seluruh penarikan
+  // Total summary seluruh penarikan & saldo keseluruhan
   const totalAllWithdrawn = withdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
   const totalAllTransferred = withdrawals.reduce(
     (sum, w) => sum + (Number(w.totalTransferred) || Number(w.amount) + (Number(w.roundingAmount) || 0)),
     0
   );
   const totalAllRounding = withdrawals.reduce((sum, w) => sum + (Number(w.roundingAmount) || 0), 0);
+
+  // Total keuntungan bisnis & penitip dari transaksi terjual
+  const totalOverallEarned = useMemo(() => {
+    return transactions
+      .filter((t) => t.status === 'Terjual')
+      .reduce((sum, t) => sum + (Number(t.profit) || 0), 0);
+  }, [transactions]);
+
+  // Total Saldo Belum Ditarik Secara Keseluruhan (Sisa Kas / Hak Belum Cair)
+  const totalOverallRemaining = Math.max(0, totalOverallEarned - totalAllWithdrawn);
 
   // Filter Data Riwayat Penarikan
   const filteredWithdrawals = useMemo(() => {
@@ -573,6 +583,60 @@ export default function Withdrawals() {
             </svg>
             Catat Penarikan Baru
           </Button>
+        </div>
+      </div>
+
+      {/* Ringkasan Keseluruhan: Total Saldo Belum Ditarik */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Total Keuntungan Keseluruhan */}
+        <div className="dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <span className="text-xs font-bold dark:text-gray-400 text-gray-500 uppercase tracking-wider block mb-1">
+              Total Seluruh Keuntungan
+            </span>
+            <p className="text-2xl lg:text-3xl font-extrabold dark:text-white text-gray-900 tracking-tight">
+              {formatCurrency(totalOverallEarned)}
+            </p>
+          </div>
+          <p className="text-xs dark:text-gray-500 text-gray-400 mt-2 flex items-center gap-1">
+            <span>📈</span>
+            <span>Akumulasi dari seluruh transaksi terjual</span>
+          </p>
+        </div>
+
+        {/* Total Sudah Ditarik */}
+        <div className="dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <span className="text-xs font-bold dark:text-gray-400 text-gray-500 uppercase tracking-wider block mb-1">
+              Total Sudah Dicairkan (Ditarik)
+            </span>
+            <p className="text-2xl lg:text-3xl font-extrabold text-gray-400 tracking-tight">
+              {formatCurrency(totalAllWithdrawn)}
+            </p>
+          </div>
+          <p className="text-xs dark:text-gray-500 text-gray-400 mt-2 flex items-center gap-1">
+            <span>💸</span>
+            <span>{withdrawals.length} riwayat pencairan saldo tercatat</span>
+          </p>
+        </div>
+
+        {/* Total Saldo BELUM DITARIK Keseluruhan */}
+        <div className="dark:bg-surface-200 bg-white border-2 border-emerald-500/40 rounded-2xl p-5 shadow-lg shadow-emerald-500/5 flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-emerald-500/5 to-transparent">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl -mr-6 -mt-6 pointer-events-none" />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-extrabold text-emerald-400 uppercase tracking-wider">
+                Total Saldo Belum Ditarik (Keseluruhan)
+              </span>
+              <span className="text-base">💰</span>
+            </div>
+            <p className="text-2xl lg:text-3xl font-extrabold text-emerald-400 tracking-tight">
+              {formatCurrency(totalOverallRemaining)}
+            </p>
+          </div>
+          <p className="text-xs text-emerald-400/80 mt-2 font-medium">
+            Sisa saldo gabungan seluruh tim & penitip eksternal
+          </p>
         </div>
       </div>
 

@@ -13,7 +13,7 @@ import Button from '../components/ui/Button';
 
 export default function ProfitSharing() {
   const { transactions, loading, profitSharingConfig } = useSales();
-  const { getTotalWithdrawn } = useWithdrawals();
+  const { getTotalWithdrawn, withdrawals } = useWithdrawals();
   const { isSuperAdmin } = useAuth();
 
   const [dateFilter, setDateFilter] = useState('all');
@@ -207,19 +207,51 @@ export default function ProfitSharing() {
         })}
       </div>
 
-      {/* Total Profit */}
-      <div className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+      {/* Ringkasan Keseluruhan: Total Keuntungan, Ditarik, & Sisa Belum Ditarik */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
-            <p className="text-xs dark:text-gray-500 text-gray-500 uppercase tracking-wider">Total Keuntungan Bersih</p>
-            <p className="text-2xl font-bold text-emerald-400 mt-1">{formatCurrency(totalProfit)}</p>
+            <p className="text-xs dark:text-gray-500 text-gray-500 uppercase tracking-wider font-semibold">Total Keuntungan Bersih</p>
+            <p className="text-2xl font-bold dark:text-white text-gray-900 mt-1">{formatCurrency(totalProfit)}</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs dark:text-gray-500 text-gray-500">Transaksi Terjual</p>
-            <p className="text-lg font-bold dark:text-white text-gray-900">
-              {filteredTransactions.filter((tx) => tx.status === 'Terjual').length} item
+          <p className="text-xs dark:text-gray-500 text-gray-400 mt-2">
+            Dari {filteredTransactions.filter((tx) => tx.status === 'Terjual').length} barang terjual
+          </p>
+        </div>
+
+        <div className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <p className="text-xs dark:text-gray-500 text-gray-500 uppercase tracking-wider font-semibold">Total Sudah Dicairkan</p>
+            <p className="text-2xl font-bold text-gray-400 mt-1">
+              {formatCurrency((withdrawals || []).reduce((sum, w) => sum + (Number(w.amount) || 0), 0))}
             </p>
           </div>
+          <p className="text-xs dark:text-gray-500 text-gray-400 mt-2">
+            {(withdrawals || []).length} penarikan saldo tercatat
+          </p>
+        </div>
+
+        <div className="dark:bg-surface-200 bg-white border-2 border-emerald-500/40 rounded-2xl p-5 shadow-lg shadow-emerald-500/5 flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-emerald-500/5 to-transparent">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl -mr-6 -mt-6 pointer-events-none" />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-extrabold text-emerald-400 uppercase tracking-wider">
+                Total Saldo Belum Ditarik
+              </p>
+              <span className="text-base">💰</span>
+            </div>
+            <p className="text-2xl font-extrabold text-emerald-400 mt-1">
+              {formatCurrency(
+                Math.max(
+                  0,
+                  totalProfit - (withdrawals || []).reduce((sum, w) => sum + (Number(w.amount) || 0), 0)
+                )
+              )}
+            </p>
+          </div>
+          <p className="text-xs text-emerald-400/80 mt-2 font-medium">
+            Sisa saldo kas yang belum dicairkan oleh seluruh pihak
+          </p>
         </div>
       </div>
 
