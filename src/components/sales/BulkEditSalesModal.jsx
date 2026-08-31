@@ -11,9 +11,19 @@ import {
   PAYMENT_METHODS,
   ORDER_SOURCES,
   SHIPPING_COURIERS,
+  SCHEME_PRESETS,
 } from '../../constants/profitSharingConfig';
 import { formatCurrency, formatDate } from '../../utils/formatCurrency';
 import toast from 'react-hot-toast';
+
+const defaultCustomScheme = {
+  pemilikBarang: 85,
+  operational: 15,
+  akbar: 0,
+  nesa: 0,
+  andin: 0,
+  ritza: 0,
+};
 
 export default function BulkEditSalesModal({
   isOpen,
@@ -32,6 +42,7 @@ export default function BulkEditSalesModal({
     ekspedisi: false,
     category: false,
     ownerName: false,
+    profitSharingScheme: false,
     date: false,
     notes: false,
   });
@@ -48,6 +59,10 @@ export default function BulkEditSalesModal({
     notes: '',
     notesMode: 'append', // 'replace' | 'append'
   });
+
+  // Skema Bagi Hasil State
+  const [schemePresetId, setSchemePresetId] = useState('scheme_85_15'); // 'scheme_85_15' | 'scheme_90_10' | 'standard' | 'custom'
+  const [customScheme, setCustomScheme] = useState(defaultCustomScheme);
 
   const [submitting, setSubmitting] = useState(false);
   const [showPreviewList, setShowPreviewList] = useState(false);
@@ -66,6 +81,32 @@ export default function BulkEditSalesModal({
     }));
   };
 
+  const handleSelectPreset = (presetId) => {
+    setSchemePresetId(presetId);
+    const preset = SCHEME_PRESETS.find((p) => p.id === presetId);
+    if (preset && preset.scheme) {
+      setCustomScheme({ ...preset.scheme });
+    }
+  };
+
+  const handleCustomSchemeChange = (key, value) => {
+    const num = Math.max(0, Math.min(100, Number(value) || 0));
+    setCustomScheme((prev) => ({
+      ...prev,
+      [key]: num,
+    }));
+  };
+
+  const totalCustomPercentage =
+    Number(customScheme.pemilikBarang || 0) +
+    Number(customScheme.operational || 0) +
+    Number(customScheme.akbar || 0) +
+    Number(customScheme.nesa || 0) +
+    Number(customScheme.andin || 0) +
+    Number(customScheme.ritza || 0);
+
+  const isValidCustomTotal = schemePresetId === 'standard' || totalCustomPercentage === 100;
+
   const isAnyFieldActive = Object.values(activeFields).some(Boolean);
   const activeCount = Object.values(activeFields).filter(Boolean).length;
 
@@ -74,6 +115,11 @@ export default function BulkEditSalesModal({
 
     if (!isAnyFieldActive) {
       toast.error('Pilih setidaknya satu bidang (field) yang ingin diperbarui secara massal.');
+      return;
+    }
+
+    if (activeFields.profitSharingScheme && !isValidCustomTotal) {
+      toast.error(`Total persentase skema bagi hasil harus pas 100% (saat ini: ${totalCustomPercentage}%).`);
       return;
     }
 
@@ -137,10 +183,42 @@ export default function BulkEditSalesModal({
           }
         }
 
-        // 8. Pemilik Barang & Kalkulasi Ulang Bagi Hasil
+        // 8. Pemilik Barang
         if (activeFields.ownerName) {
           updatedFields.ownerName = formValues.ownerName;
+        }
 
+        // 9. Penanganan Skema Bagi Hasil & Kalkulasi Ulang
+        if (activeFields.profitSharingScheme) {
+          // Kasus A: Pengguna secara eksplisit mengubah skema bagi hasil massal
+          let schemeToUse = profitSharingConfig;
+
+          if (schemePresetId === 'standard') {
+            updatedFields.ownerCustomScheme = null;
+            updatedFields.skemaCustom = null;
+            schemeToUse = profitSharingConfig;
+          } else {
+            updatedFields.ownerCustomScheme = { ...customScheme };
+            updatedFields.skemaCustom = { ...customScheme };
+            schemeToUse = {};
+            Object.keys(profitSharingConfig).forEach((k) => {
+              schemeToUse[k] = {
+                ...profitSharingConfig[k],
+                percentage: Number(customScheme[k] || 0),
+              };
+            });
+          }
+
+          const { profit, sharing } = calculateProfitSharing(
+            Number(tx.sellingPrice || 0),
+            Number(tx.costPrice || 0),
+            schemeToUse
+          );
+
+          updatedFields.profit = profit;
+          updatedFields.profitSharing = sharing;
+        } else if (activeFields.ownerName) {
+          // Kasus B: Hanya pemilik yang diubah, gunakan skema bawaan pemilik tersebut
           let schemeToUse = profitSharingConfig;
           const isCustom = targetOwnerObj?.isCustomScheme && targetOwnerObj?.customScheme;
 
@@ -217,7 +295,7 @@ export default function BulkEditSalesModal({
         </div>
 
         {/* Form Controls Grid */}
-        <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+        <div className="space-y-4 max-h-[440px] overflow-y-auto pr-1">
           {/* 1. Status Transaksi */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
@@ -258,7 +336,218 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 2. Sumber Pesanan (Channel Penjualan) */}
+          {/* 2. Skema Pembagian Hasil (PROFIT SHARING SCHEME) */}
+          <div
+            className={`p-3.5 rounded-2xl border transition-all ${
+              activeFields.profitSharingScheme
+                ? 'dark:bg-purple-950/20 bg-purple-50/60 dark:border-purple-500/40 border-purple-400'
+                : 'dark:bg-surface-200/50 bg-white dark:border-white/5 border-gray-200 opacity-70'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-purple-400 select-none">
+                <input
+                  type="checkbox"
+                  checked={activeFields.profitSharingScheme}
+                  onChange={() => toggleField('profitSharingScheme')}
+                  className="w-4 h-4 rounded border-purple-400 text-purple-500 focus:ring-purple-500 accent-purple-500 cursor-pointer"
+                />
+                <span>⚡ Ubah Skema Bagi Hasil (Profit Sharing)</span>
+              </label>
+              {activeFields.profitSharingScheme && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                  Aktif
+                </span>
+              )}
+            </div>
+
+            {activeFields.profitSharingScheme && (
+              <div className="space-y-3 pt-2">
+                {/* Preset Chips */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Preset 85% Pemilik & 15% Ops */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset('scheme_85_15')}
+                    className={`p-2.5 rounded-xl text-left border transition-all text-xs ${
+                      schemePresetId === 'scheme_85_15'
+                        ? 'border-purple-500 bg-purple-500/20 text-purple-300 font-bold shadow-sm'
+                        : 'dark:bg-surface-300 bg-white dark:border-white/10 border-gray-200 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>⚡ 85% Pemilik / 15% Ops</span>
+                      {schemePresetId === 'scheme_85_15' && <span>✓</span>}
+                    </div>
+                    <p className="text-[10px] opacity-75 font-normal mt-0.5">85% Pemilik, 15% Ops, 0% Tim</p>
+                  </button>
+
+                  {/* Preset 90% Pemilik & 10% Ops */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset('scheme_90_10')}
+                    className={`p-2.5 rounded-xl text-left border transition-all text-xs ${
+                      schemePresetId === 'scheme_90_10'
+                        ? 'border-purple-500 bg-purple-500/20 text-purple-300 font-bold shadow-sm'
+                        : 'dark:bg-surface-300 bg-white dark:border-white/10 border-gray-200 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>⚡ 90% Pemilik / 10% Ops</span>
+                      {schemePresetId === 'scheme_90_10' && <span>✓</span>}
+                    </div>
+                    <p className="text-[10px] opacity-75 font-normal mt-0.5">90% Pemilik, 10% Ops, 0% Tim</p>
+                  </button>
+
+                  {/* Preset Standar Global 70/10/5 */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset('standard')}
+                    className={`p-2.5 rounded-xl text-left border transition-all text-xs ${
+                      schemePresetId === 'standard'
+                        ? 'border-blue-500 bg-blue-500/20 text-blue-300 font-bold shadow-sm'
+                        : 'dark:bg-surface-300 bg-white dark:border-white/10 border-gray-200 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>🌐 Standar Global (70/10/5)</span>
+                      {schemePresetId === 'standard' && <span>✓</span>}
+                    </div>
+                    <p className="text-[10px] opacity-75 font-normal mt-0.5">70% Pemilik, 10% Ops, 5% Tim Tiap Orang</p>
+                  </button>
+
+                  {/* Preset Kustom Manual */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset('custom')}
+                    className={`p-2.5 rounded-xl text-left border transition-all text-xs ${
+                      schemePresetId === 'custom'
+                        ? 'border-accent bg-accent/20 text-accent font-bold shadow-sm'
+                        : 'dark:bg-surface-300 bg-white dark:border-white/10 border-gray-200 text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>⚙️ Kustom / Input Manual</span>
+                      {schemePresetId === 'custom' && <span>✓</span>}
+                    </div>
+                    <p className="text-[10px] opacity-75 font-normal mt-0.5">Atur persentase manual per pihak</p>
+                  </button>
+                </div>
+
+                {/* Sliders / Inputs if not standard */}
+                {schemePresetId !== 'standard' && (
+                  <div className="p-3 rounded-xl dark:bg-surface-300 bg-white border dark:border-white/10 border-gray-200 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs font-bold pb-1.5 border-b dark:border-white/5 border-gray-200">
+                      <span className="dark:text-gray-300 text-gray-700">Rincian Persentase Pembagian:</span>
+                      <span className={totalCustomPercentage === 100 ? 'text-emerald-400' : 'text-red-400'}>
+                        Total: {totalCustomPercentage}% / 100% {totalCustomPercentage === 100 ? '✓' : `(Selisih ${totalCustomPercentage - 100}%)`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {/* Pemilik Barang */}
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-emerald-400 font-semibold">👤 Pemilik Barang</span>
+                          <span className="font-bold text-emerald-400">{customScheme.pemilikBarang}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={customScheme.pemilikBarang}
+                          onChange={(e) => handleCustomSchemeChange('pemilikBarang', e.target.value)}
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Operasional */}
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-purple-400 font-semibold">⚙️ Operasional</span>
+                          <span className="font-bold text-purple-400">{customScheme.operational}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={customScheme.operational}
+                          onChange={(e) => handleCustomSchemeChange('operational', e.target.value)}
+                          className="w-full accent-purple-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Anggota Tim: Akbar */}
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-blue-400">👨 Akbar</span>
+                          <span className="font-bold text-blue-400">{customScheme.akbar}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={customScheme.akbar}
+                          onChange={(e) => handleCustomSchemeChange('akbar', e.target.value)}
+                          className="w-full accent-blue-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Anggota Tim: Nessa */}
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-pink-400">👩 Nessa</span>
+                          <span className="font-bold text-pink-400">{customScheme.nesa}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={customScheme.nesa}
+                          onChange={(e) => handleCustomSchemeChange('nesa', e.target.value)}
+                          className="w-full accent-pink-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Anggota Tim: Andin */}
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-amber-400">👩 Andin</span>
+                          <span className="font-bold text-amber-400">{customScheme.andin}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={customScheme.andin}
+                          onChange={(e) => handleCustomSchemeChange('andin', e.target.value)}
+                          className="w-full accent-amber-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Anggota Tim: Ritza */}
+                      <div>
+                        <div className="flex justify-between text-[11px] mb-1">
+                          <span className="text-cyan-400">👩 Ritza</span>
+                          <span className="font-bold text-cyan-400">{customScheme.ritza}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={customScheme.ritza}
+                          onChange={(e) => handleCustomSchemeChange('ritza', e.target.value)}
+                          className="w-full accent-cyan-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 3. Sumber Pesanan (Channel Penjualan) */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.sumberPesanan
@@ -298,7 +587,7 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 3. Metode Pembayaran */}
+          {/* 4. Metode Pembayaran */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.paymentMethod
@@ -338,7 +627,7 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 4. Ekspedisi / Kurir Pengiriman */}
+          {/* 5. Ekspedisi / Kurir Pengiriman */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.ekspedisi
@@ -378,7 +667,7 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 5. Kategori Barang */}
+          {/* 6. Kategori Barang */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.category
@@ -418,7 +707,7 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 6. Pemilik Barang (Penitip / Anggota Tim) */}
+          {/* 7. Pemilik Barang (Penitip / Anggota Tim) */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.ownerName
@@ -438,7 +727,7 @@ export default function BulkEditSalesModal({
               </label>
               {activeFields.ownerName && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-accent/20 text-accent">
-                  Aktif (Bagi Hasil Disesuaikan)
+                  Aktif
                 </span>
               )}
             </div>
@@ -458,7 +747,7 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 7. Tanggal Transaksi */}
+          {/* 8. Tanggal Transaksi */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.date
@@ -493,7 +782,7 @@ export default function BulkEditSalesModal({
             )}
           </div>
 
-          {/* 8. Catatan Transaksi */}
+          {/* 9. Catatan Transaksi */}
           <div
             className={`p-3.5 rounded-2xl border transition-all ${
               activeFields.notes
@@ -605,7 +894,7 @@ export default function BulkEditSalesModal({
               variant="primary"
               type="submit"
               loading={submitting}
-              disabled={!isAnyFieldActive || submitting}
+              disabled={!isAnyFieldActive || (activeFields.profitSharingScheme && !isValidCustomTotal) || submitting}
             >
               Simpan Perubahan ({selectedTransactions.length} Transaksi)
             </Button>

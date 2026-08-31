@@ -41,6 +41,58 @@ export const PROFIT_SHARING_CONFIG = {
 
 export const TEAM_MEMBER_KEYS = ['akbar', 'nesa', 'andin', 'ritza'];
 
+// Preset Skema Pembagian Hasil
+export const SCHEME_PRESETS = [
+  {
+    id: 'standard',
+    label: 'Standar Global (70% Pemilik, 10% Ops, 5% Tiap Tim)',
+    description: '70% Pemilik, 10% Operasional, 5% Akbar, 5% Nessa, 5% Andin, 5% Ritza',
+    isCustom: false,
+    scheme: {
+      pemilikBarang: 70,
+      operational: 10,
+      akbar: 5,
+      nesa: 5,
+      andin: 5,
+      ritza: 5,
+    },
+  },
+  {
+    id: 'scheme_85_15',
+    label: 'Skema 85% Pemilik & 15% Operasional',
+    description: '85% Pemilik Barang, 15% Operasional, 0% Anggota Tim',
+    isCustom: true,
+    scheme: {
+      pemilikBarang: 85,
+      operational: 15,
+      akbar: 0,
+      nesa: 0,
+      andin: 0,
+      ritza: 0,
+    },
+  },
+  {
+    id: 'scheme_90_10',
+    label: 'Skema 90% Pemilik & 10% Operasional',
+    description: '90% Pemilik Barang, 10% Operasional, 0% Anggota Tim',
+    isCustom: true,
+    scheme: {
+      pemilikBarang: 90,
+      operational: 10,
+      akbar: 0,
+      nesa: 0,
+      andin: 0,
+      ritza: 0,
+    },
+  },
+  {
+    id: 'custom',
+    label: 'Skema Kustom (Input Manual)',
+    description: 'Atur persentase manual per pihak',
+    isCustom: true,
+  },
+];
+
 export function getTeamMemberKey(nameOrUsername) {
   if (!nameOrUsername) return null;
   const clean = String(nameOrUsername).trim().toLowerCase();
