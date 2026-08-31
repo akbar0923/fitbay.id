@@ -60,6 +60,7 @@ export function InventoryProvider({ children }) {
       try {
         const author = user?.username || 'admin';
         const newItem = await addInventoryItem(itemData, author);
+        setItems((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
         toast.success(`Barang ${newItem.kodeBarang} berhasil didata!`);
         return newItem;
       } catch (err) {
@@ -73,6 +74,11 @@ export function InventoryProvider({ children }) {
   const updateItem = useCallback(async (id, updateData) => {
     try {
       const updated = await updateInventoryItem(id, updateData);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, ...updateData, updatedAt: new Date().toISOString() } : item
+        )
+      );
       toast.success('Data barang berhasil diperbarui!');
       return updated;
     } catch (err) {
@@ -84,6 +90,7 @@ export function InventoryProvider({ children }) {
   const deleteItem = useCallback(async (id) => {
     try {
       await deleteInventoryItem(id);
+      setItems((prev) => prev.filter((item) => item.id !== id));
       toast.success('Barang berhasil dihapus dari inventaris');
     } catch (err) {
       toast.error('Gagal menghapus barang');
@@ -94,6 +101,18 @@ export function InventoryProvider({ children }) {
   const markAsSold = useCallback(async (id, transactionId) => {
     try {
       await markItemAsSold(id, transactionId);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                status: 'Terjual',
+                referensiTransaksiId: transactionId || null,
+                tanggalTerjual: new Date().toISOString().split('T')[0],
+              }
+            : item
+        )
+      );
     } catch (err) {
       console.warn('Failed to mark item as sold:', err);
     }
@@ -102,6 +121,18 @@ export function InventoryProvider({ children }) {
   const restoreToUnsold = useCallback(async (id) => {
     try {
       await restoreItemToUnsold(id);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                status: 'Belum Terjual',
+                referensiTransaksiId: null,
+                tanggalTerjual: null,
+              }
+            : item
+        )
+      );
     } catch (err) {
       console.warn('Failed to restore item to unsold:', err);
     }

@@ -194,18 +194,20 @@ export function subscribeInventory(callback) {
     return onSnapshot(
       q,
       (snapshot) => {
-        if (snapshot.empty) {
-          callback(getLocalInventory());
-          return;
+        const local = getLocalInventory();
+        const map = new Map();
+        local.forEach((item) => map.set(item.id, item));
+
+        if (!snapshot.empty) {
+          snapshot.forEach((docSnap) => {
+            if (docSnap.id !== COUNTER_DOC_ID) {
+              map.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+            }
+          });
         }
-        const items = [];
-        snapshot.forEach((docSnap) => {
-          if (docSnap.id !== COUNTER_DOC_ID) {
-            items.push({ id: docSnap.id, ...docSnap.data() });
-          }
-        });
-        saveLocalInventory(items);
-        callback(items);
+        const merged = Array.from(map.values());
+        saveLocalInventory(merged);
+        callback(merged);
       },
       (error) => {
         console.warn('Inventory onSnapshot error (fallback to local cache):', error);
