@@ -22,7 +22,7 @@ export default function OwnerPortal() {
   const [itemSearch, setItemSearch] = useState('');
 
   // Nomor WhatsApp Admin Fitbay.id untuk pengajuan pencairan saldo
-  const ADMIN_WA_NUMBER = '62895325852230'; // Bisa disesuaikan
+  const ADMIN_WA_NUMBER = import.meta.env.VITE_ADMIN_WA_NUMBER || '6285121009699';
 
   // Fetch initial dataset
   useEffect(() => {
