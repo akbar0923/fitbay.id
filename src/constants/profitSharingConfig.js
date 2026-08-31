@@ -66,12 +66,47 @@ export const CATEGORIES = [
 export const TRANSACTION_STATUSES = ['Terjual', 'Pending', 'Retur'];
 
 // Metode Pembayaran
-export const PAYMENT_METHODS = ['Transfer Bank', 'QRIS'];
+export const PAYMENT_METHODS = ['Transfer Bank', 'QRIS', 'Tunai / Cash'];
+
+// Sumber Pesanan / Channel Penjualan
+export const ORDER_SOURCES = [
+  'WhatsApp',
+  'Instagram',
+  'TikTok Live',
+  'Bertemu Langsung (Offline)',
+  'Shopee',
+  'Lainnya',
+];
+
+// Opsi Ekspedisi / Kurir Pengiriman
+export const SHIPPING_COURIERS = [
+  'J&T Express',
+  'SiCepat',
+  'JNE Express',
+  'Shopee Xpress (SPX)',
+  'J&T Cargo',
+  'Anteraja',
+  'Paxel',
+  'Ambil Sendiri (Self-Pickup)',
+  'Kurir Instan (Gojek/Grab)',
+  'Lainnya',
+];
+
+// Warna sumber pesanan
+export const ORDER_SOURCE_COLORS = {
+  'WhatsApp': { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: '💬' },
+  'Instagram': { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30', icon: '📸' },
+  'TikTok Live': { bg: 'bg-cyan-500/20', text: 'text-cyan-400', border: 'border-cyan-500/30', icon: '🎵' },
+  'Bertemu Langsung (Offline)': { bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30', icon: '🏪' },
+  'Shopee': { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30', icon: '🛍️' },
+  'Lainnya': { bg: 'bg-gray-500/20', text: 'text-gray-400', border: 'border-gray-500/30', icon: '📦' },
+};
 
 // Warna metode pembayaran
 export const PAYMENT_METHOD_COLORS = {
   'Transfer Bank': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', icon: '🏦' },
   'QRIS': { bg: 'bg-purple-500/20', text: 'text-purple-400', border: 'border-purple-500/30', icon: '📱' },
+  'Tunai / Cash': { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: '💵' },
 };
 
 // Role Pengguna

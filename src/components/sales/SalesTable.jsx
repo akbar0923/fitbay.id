@@ -8,12 +8,16 @@ import {
   TRANSACTION_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_METHOD_COLORS,
+  ORDER_SOURCES,
+  ORDER_SOURCE_COLORS,
   PAGE_SIZE_OPTIONS,
 } from '../../constants/profitSharingConfig';
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
 import Button from '../ui/Button';
 import { SkeletonTable } from '../ui/Skeleton';
+import ShippingLabelModal from './ShippingLabelModal';
+import toast from 'react-hot-toast';
 
 export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const { transactions, loading } = useSales();
@@ -24,6 +28,7 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const [filterOwner, setFilterOwner] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterPaymentMethod, setFilterPaymentMethod] = useState('');
+  const [filterSource, setFilterSource] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterDateStart, setFilterDateStart] = useState('');
   const [filterDateEnd, setFilterDateEnd] = useState('');
@@ -31,6 +36,26 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // State Cetak Label Pengiriman
+  const [selectedShippingTx, setSelectedShippingTx] = useState(null);
+  const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
+
+  const handleOpenShippingModal = (tx) => {
+    setSelectedShippingTx(tx);
+    setIsShippingModalOpen(true);
+  };
+
+  const handleCopyAddress = (tx, e) => {
+    e?.stopPropagation();
+    if (!tx.alamatPenerima) {
+      toast.error('Alamat belum diisi pada transaksi ini');
+      return;
+    }
+    const text = `Penerima: ${tx.namaPenerima || '-'}\nNo. HP: ${tx.noHpPenerima || '-'}\nAlamat: ${tx.alamatPenerima}\nEkspedisi: ${tx.ekspedisi || 'Reguler'}\nBarang: ${tx.itemName || '-'} (${tx.kodeBarang || '-'})`;
+    navigator.clipboard.writeText(text);
+    toast.success(`Alamat pengiriman ${tx.namaPenerima || tx.itemName} berhasil disalin! 📋`);
+  };
 
   const filteredData = useMemo(() => {
     let data = [...transactions];
@@ -58,6 +83,11 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
     // Filter payment method
     if (filterPaymentMethod) {
       data = data.filter((tx) => (tx.paymentMethod || 'Transfer Bank') === filterPaymentMethod);
+    }
+
+    // Filter sumber pesanan
+    if (filterSource) {
+      data = data.filter((tx) => (tx.sumberPesanan || 'WhatsApp') === filterSource);
     }
 
     // Filter status
@@ -201,6 +231,22 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
               ))}
             </select>
 
+            {/* Source / Channel Filter */}
+            <select
+              value={filterSource}
+              onChange={(e) => { setFilterSource(e.target.value); setPage(1); }}
+              className="px-4 py-2.5 rounded-xl text-sm dark:bg-surface-300 bg-white 
+                dark:text-white text-gray-900 dark:border-white/10 border-gray-300 border
+                focus:outline-none focus:ring-2 focus:ring-accent/50 appearance-none cursor-pointer
+                bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke-width%3D%221.5%22%20stroke%3D%22%239ca3af%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22m19.5%208.25-7.5%207.5-7.5-7.5%22%20%2F%3E%3C%2Fsvg%3E')]
+                bg-[length:20px] bg-[right_12px_center] bg-no-repeat pr-10"
+            >
+              <option value="">Semua Sumber (Channel)</option>
+              {ORDER_SOURCES.map((src) => (
+                <option key={src} value={src}>{src}</option>
+              ))}
+            </select>
+
             {/* Status Filter */}
             <select
               value={filterStatus}
@@ -306,6 +352,9 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                       Keuntungan <SortIcon field="profit" />
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">
+                      Channel & Pengiriman
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">
                       Metode
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">
@@ -319,6 +368,9 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                 <tbody className="divide-y dark:divide-white/5 divide-gray-100">
                   {paginatedData.map((tx) => {
                     const payColor = PAYMENT_METHOD_COLORS[tx.paymentMethod || 'Transfer Bank'] || PAYMENT_METHOD_COLORS['Transfer Bank'];
+                    const sourceColor = ORDER_SOURCE_COLORS[tx.sumberPesanan || 'WhatsApp'] || ORDER_SOURCE_COLORS['WhatsApp'];
+                    const isShopee = tx.sumberPesanan === 'Shopee';
+
                     return (
                       <tr key={tx.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors duration-150">
                         <td className="px-4 py-3.5 text-sm dark:text-gray-300 text-gray-700 whitespace-nowrap">
@@ -357,6 +409,29 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                         <td className={`px-3 py-3.5 text-sm text-right whitespace-nowrap font-semibold ${tx.profit > 0 ? 'text-emerald-400' : tx.profit < 0 ? 'text-red-400' : 'dark:text-gray-400 text-gray-600'}`}>
                           {formatCurrency(tx.profit)}
                         </td>
+                        
+                        {/* Sumber Pesanan & Penerima */}
+                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${sourceColor.bg} ${sourceColor.text}`}>
+                              <span>{sourceColor.icon}</span>
+                              <span>{tx.sumberPesanan || 'WhatsApp'}</span>
+                            </span>
+                            {tx.namaPenerima && (
+                              <div className="flex items-center gap-1 text-[11px] dark:text-gray-400 text-gray-500 max-w-[130px] truncate" title={`${tx.namaPenerima} - ${tx.alamatPenerima || ''}`}>
+                                <span>📦 {tx.namaPenerima}</span>
+                                <button
+                                  onClick={(e) => handleCopyAddress(tx, e)}
+                                  className="text-accent hover:text-white p-0.5 rounded"
+                                  title="Salin Alamat Lengkap"
+                                >
+                                  📋
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
                         <td className="px-3 py-3.5 text-center whitespace-nowrap">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${payColor.bg} ${payColor.text}`}>
                             <span>{payColor.icon}</span>
@@ -368,10 +443,34 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                         </td>
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
+                            {/* Tombol Cetak Label Pengiriman / Struk */}
+                            <button
+                              onClick={() => handleOpenShippingModal(tx)}
+                              className={`p-2 rounded-lg transition-all duration-200 ${
+                                isShopee
+                                  ? 'dark:text-gray-500 text-gray-400 hover:text-gray-300 dark:hover:bg-white/5'
+                                  : 'dark:text-emerald-400 text-emerald-600 dark:hover:bg-emerald-500/10 hover:bg-emerald-50'
+                              }`}
+                              title={isShopee ? 'Cetak Struk / Invoice (Label Otomatis Shopee)' : 'Cetak Label Pengiriman (10x15 cm) & Struk'}
+                            >
+                              <span className="text-sm">🖨️</span>
+                            </button>
+
+                            {/* Tombol Salin Alamat Langsung */}
+                            {tx.alamatPenerima && (
+                              <button
+                                onClick={(e) => handleCopyAddress(tx, e)}
+                                className="p-2 rounded-lg dark:text-accent text-accent dark:hover:bg-accent/10 hover:bg-accent/10 transition-all duration-200"
+                                title="Salin Alamat Penerima"
+                              >
+                                <span className="text-sm">📋</span>
+                              </button>
+                            )}
+
                             <button
                               onClick={() => onEdit(tx)}
                               className="p-2 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:text-blue-400 hover:text-blue-600 dark:hover:bg-blue-500/10 hover:bg-blue-50 transition-all duration-200"
-                              title="Edit"
+                              title="Edit Transaksi"
                             >
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
@@ -403,9 +502,12 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
           <div className="md:hidden space-y-3">
             {paginatedData.map((tx) => {
               const payColor = PAYMENT_METHOD_COLORS[tx.paymentMethod || 'Transfer Bank'] || PAYMENT_METHOD_COLORS['Transfer Bank'];
+              const sourceColor = ORDER_SOURCE_COLORS[tx.sumberPesanan || 'WhatsApp'] || ORDER_SOURCE_COLORS['WhatsApp'];
+              const isShopee = tx.sumberPesanan === 'Shopee';
+
               return (
-                <div key={tx.id} className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-start justify-between mb-2">
+                <div key={tx.id} className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-4 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {tx.kodeBarang && (
@@ -425,13 +527,33 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <Badge status={tx.status} />
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${payColor.bg} ${payColor.text}`}>
-                        {tx.paymentMethod || 'Transfer'}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${sourceColor.bg} ${sourceColor.text}`}>
+                        {sourceColor.icon} {tx.sumberPesanan || 'WhatsApp'}
                       </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t dark:border-white/5 border-gray-100">
+                  {/* Info Penerima jika ada */}
+                  {tx.namaPenerima && (
+                    <div className="p-2.5 rounded-xl dark:bg-white/5 bg-gray-50 border dark:border-white/5 border-gray-200 text-xs flex items-center justify-between">
+                      <div className="min-w-0 pr-2">
+                        <p className="font-bold dark:text-white text-gray-900 truncate">
+                          📦 {tx.namaPenerima} ({tx.noHpPenerima || '-'})
+                        </p>
+                        <p className="text-[11px] dark:text-gray-400 text-gray-500 truncate">
+                          {tx.alamatPenerima || 'Alamat lengkap'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => handleCopyAddress(tx, e)}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-accent/20 text-accent shrink-0"
+                      >
+                        📋 Salin
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t dark:border-white/5 border-gray-100">
                     <div>
                       <p className="text-[10px] dark:text-gray-500 text-gray-400 uppercase">Modal</p>
                       <p className="text-xs dark:text-gray-300 text-gray-700">{formatCurrency(tx.costPrice)}</p>
@@ -448,26 +570,52 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t dark:border-white/5 border-gray-100">
+                  <div className="flex items-center justify-between pt-2 border-t dark:border-white/5 border-gray-100">
                     <button
-                      onClick={() => onEdit(tx)}
-                      className="px-3 py-1.5 text-xs rounded-lg dark:text-blue-400 text-blue-600 dark:bg-blue-500/10 bg-blue-50 transition-all font-medium"
+                      onClick={() => handleOpenShippingModal(tx)}
+                      className={`px-3 py-1.5 text-xs rounded-xl font-bold flex items-center gap-1.5 ${
+                        isShopee
+                          ? 'dark:bg-white/5 bg-gray-100 dark:text-gray-400 text-gray-600'
+                          : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                      }`}
                     >
-                      Edit
+                      <span>🖨️</span>
+                      <span>{isShopee ? 'Struk' : 'Cetak Label'}</span>
                     </button>
-                    {isAdmin && (
+
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => onDelete(tx)}
-                        className="px-3 py-1.5 text-xs rounded-lg dark:text-red-400 text-red-600 dark:bg-red-500/10 bg-red-50 transition-all font-medium"
+                        onClick={() => onEdit(tx)}
+                        className="px-3 py-1.5 text-xs rounded-lg dark:text-blue-400 text-blue-600 dark:bg-blue-500/10 bg-blue-50 transition-all font-medium"
                       >
-                        Hapus
+                        Edit
                       </button>
-                    )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => onDelete(tx)}
+                          className="px-3 py-1.5 text-xs rounded-lg dark:text-red-400 text-red-600 dark:bg-red-500/10 bg-red-50 transition-all font-medium"
+                        >
+                          Hapus
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
+
+          {/* Modal Cetak Label Pengiriman */}
+          {selectedShippingTx && (
+            <ShippingLabelModal
+              isOpen={isShippingModalOpen}
+              onClose={() => {
+                setIsShippingModalOpen(false);
+                setSelectedShippingTx(null);
+              }}
+              transaction={selectedShippingTx}
+            />
+          )}
 
           {/* Pagination */}
           {totalPages > 1 && (

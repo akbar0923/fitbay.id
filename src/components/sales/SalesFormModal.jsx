@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Modal from '../ui/Modal';
 import Input, { Select } from '../ui/Input';
 import Button from '../ui/Button';
-import { CATEGORIES, TRANSACTION_STATUSES, PAYMENT_METHODS } from '../../constants/profitSharingConfig';
+import { CATEGORIES, TRANSACTION_STATUSES, PAYMENT_METHODS, ORDER_SOURCES, SHIPPING_COURIERS } from '../../constants/profitSharingConfig';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useOwners } from '../../context/OwnerContext';
 import { useSales } from '../../context/SalesContext';
@@ -28,9 +28,17 @@ const initialForm = {
   costPrice: '',
   sellingPrice: '',
   paymentMethod: 'Transfer Bank',
+  sumberPesanan: 'WhatsApp',
   status: 'Terjual',
   kodeBarang: '',
   inventoryItemId: null,
+  // Data Pengiriman & Penerima
+  namaPenerima: '',
+  noHpPenerima: '',
+  alamatPenerima: '',
+  ekspedisi: 'J&T Express',
+  resi: '',
+  catatanPengiriman: '',
 };
 
 export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) {
@@ -62,9 +70,17 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
         costPrice: String(editData.costPrice || 0),
         sellingPrice: String(editData.sellingPrice || ''),
         paymentMethod: editData.paymentMethod || 'Transfer Bank',
+        sumberPesanan: editData.sumberPesanan || 'WhatsApp',
         status: editData.status || 'Terjual',
         kodeBarang: editData.kodeBarang || '',
         inventoryItemId: editData.inventoryItemId || null,
+        // Data Pengiriman
+        namaPenerima: editData.namaPenerima || '',
+        noHpPenerima: editData.noHpPenerima || '',
+        alamatPenerima: editData.alamatPenerima || '',
+        ekspedisi: editData.ekspedisi || 'J&T Express',
+        resi: editData.resi || '',
+        catatanPengiriman: editData.catatanPengiriman || '',
       });
 
       const savedCustom = editData.skemaCustom || editData.ownerCustomScheme;
@@ -666,7 +682,18 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Metode Pembayaran, Sumber Pesanan, & Status */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Select
+            label="Sumber Pesanan / Channel"
+            value={form.sumberPesanan}
+            onChange={(e) => handleChange('sumberPesanan', e.target.value)}
+          >
+            {ORDER_SOURCES.map((source) => (
+              <option key={source} value={source}>{source}</option>
+            ))}
+          </Select>
+
           <Select
             label="Metode Pembayaran"
             value={form.paymentMethod}
@@ -686,6 +713,82 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
               <option key={s} value={s}>{s}</option>
             ))}
           </Select>
+        </div>
+
+        {/* Data Penerima & Pengiriman (Opsional) */}
+        <div className="p-4 rounded-2xl border dark:border-white/10 border-gray-200 dark:bg-surface-300/40 bg-gray-50/70 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📦</span>
+              <div>
+                <h4 className="text-xs font-bold dark:text-white text-gray-900">
+                  Data Penerima & Alamat Pengiriman (Opsional)
+                </h4>
+                <p className="text-[11px] dark:text-gray-400 text-gray-500">
+                  Diisi jika barang perlu dikirimkan melalui ekspedisi (bukan COD/ambil sendiri).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Nama Lengkap Penerima"
+              placeholder="Contoh: Budi Santoso"
+              value={form.namaPenerima}
+              onChange={(e) => handleChange('namaPenerima', e.target.value)}
+            />
+            <Input
+              label="No. WhatsApp / HP Penerima"
+              placeholder="Contoh: 081234567890"
+              value={form.noHpPenerima}
+              onChange={(e) => handleChange('noHpPenerima', e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">
+              Alamat Lengkap Pengiriman (Jalan, RT/RW, Kelurahan, Kecamatan, Kota, Kode Pos)
+            </label>
+            <textarea
+              rows={2}
+              placeholder="Contoh: Jl. Mawar No. 12, RT 04/RW 02, Kel. Menteng, Kec. Menteng, Jakarta Pusat 10310"
+              value={form.alamatPenerima}
+              onChange={(e) => handleChange('alamatPenerima', e.target.value)}
+              className="w-full px-3.5 py-2 rounded-xl text-sm
+                dark:bg-surface-200 bg-white dark:text-white text-gray-900
+                dark:border-white/10 border-gray-300 border
+                dark:placeholder-gray-500 placeholder-gray-400
+                focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent
+                transition-all duration-200 resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Pilihan Kurir / Ekspedisi"
+              value={form.ekspedisi}
+              onChange={(e) => handleChange('ekspedisi', e.target.value)}
+            >
+              {SHIPPING_COURIERS.map((cur) => (
+                <option key={cur} value={cur}>{cur}</option>
+              ))}
+            </Select>
+
+            <Input
+              label="Nomor Resi (Opsional)"
+              placeholder="Contoh: JT1234567890"
+              value={form.resi}
+              onChange={(e) => handleChange('resi', e.target.value)}
+            />
+          </div>
+
+          <Input
+            label="Catatan Khusus Pengiriman (Opsional)"
+            placeholder="Contoh: Tolong titipkan di pos satpam jika tidak ada orang / Fragile"
+            value={form.catatanPengiriman}
+            onChange={(e) => handleChange('catatanPengiriman', e.target.value)}
+          />
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-4 border-t dark:border-white/5 border-gray-200">

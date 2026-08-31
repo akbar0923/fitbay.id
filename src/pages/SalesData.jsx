@@ -1,16 +1,20 @@
 import { useState } from 'react';
 import { useSales } from '../context/SalesContext';
+import { useAuth } from '../context/AuthContext';
 import SalesTable from '../components/sales/SalesTable';
 import SalesFormModal from '../components/sales/SalesFormModal';
 import DeleteConfirmModal from '../components/sales/DeleteConfirmModal';
 import ImportSpreadsheetModal from '../components/sales/ImportSpreadsheetModal';
+import StoreSettingsModal from '../components/sales/StoreSettingsModal';
 import Button from '../components/ui/Button';
 
 export default function SalesData() {
   const { addTransaction, addTransactionsBatch, updateTransaction, deleteTransaction } = useSales();
+  const { isAdmin } = useAuth();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isStoreSettingsOpen, setIsStoreSettingsOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [deletingTransaction, setDeletingTransaction] = useState(null);
 
@@ -50,14 +54,19 @@ export default function SalesData() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold dark:text-white text-gray-900">Data Penjualan</h1>
-          <p className="text-sm dark:text-gray-500 text-gray-500 mt-1">Kelola semua transaksi penjualan</p>
+          <p className="text-sm dark:text-gray-500 text-gray-500 mt-1">Kelola transaksi penjualan, cetak label, dan pengiriman</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAdmin && (
+            <Button variant="ghost" onClick={() => setIsStoreSettingsOpen(true)} title="Atur data pengirim untuk label paket">
+              <span>⚙️ Data Pengirim</span>
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => setIsImportOpen(true)}>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
             </svg>
-            Impor Data Spreadsheet
+            Impor Data
           </Button>
           <Button onClick={handleAdd}>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -96,6 +105,12 @@ export default function SalesData() {
         isOpen={isImportOpen}
         onClose={() => setIsImportOpen(false)}
         onImportBatch={addTransactionsBatch}
+      />
+
+      {/* Store Settings Modal */}
+      <StoreSettingsModal
+        isOpen={isStoreSettingsOpen}
+        onClose={() => setIsStoreSettingsOpen(false)}
       />
     </div>
   );
