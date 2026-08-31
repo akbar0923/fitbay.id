@@ -277,11 +277,19 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
         costPrice: Number(form.costPrice),
         sellingPrice: Number(form.sellingPrice),
         paymentMethod: form.paymentMethod,
+        sumberPesanan: form.sumberPesanan || 'WhatsApp',
         status: form.status,
         isCustomScheme: isCustomSchemeActive,
         skemaCustom: customPayload,
         kodeBarang: form.kodeBarang || null,
         inventoryItemId: form.inventoryItemId || null,
+        // Data Pengiriman & Penerima
+        namaPenerima: form.namaPenerima ? form.namaPenerima.trim() : '',
+        noHpPenerima: form.noHpPenerima ? form.noHpPenerima.trim() : '',
+        alamatPenerima: form.alamatPenerima ? form.alamatPenerima.trim() : '',
+        ekspedisi: form.ekspedisi || 'J&T Express',
+        resi: form.resi ? form.resi.trim() : '',
+        catatanPengiriman: form.catatanPengiriman ? form.catatanPengiriman.trim() : '',
       });
       onClose();
     } catch (err) {

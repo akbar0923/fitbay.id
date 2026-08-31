@@ -176,6 +176,7 @@ export function SalesProvider({ children }) {
         costPrice: Number(data.costPrice || 0),
         sellingPrice: Number(data.sellingPrice),
         paymentMethod: data.paymentMethod || 'Transfer Bank',
+        sumberPesanan: data.sumberPesanan || 'WhatsApp',
         profit,
         status: data.status || 'Terjual',
         profitSharing: sharing,
@@ -183,6 +184,13 @@ export function SalesProvider({ children }) {
         skemaCustom: customScheme || null,
         kodeBarang: data.kodeBarang || null,
         inventoryItemId: data.inventoryItemId || null,
+        // Data Pengiriman & Penerima
+        namaPenerima: data.namaPenerima || '',
+        noHpPenerima: data.noHpPenerima || '',
+        alamatPenerima: data.alamatPenerima || '',
+        ekspedisi: data.ekspedisi || 'J&T Express',
+        resi: data.resi || '',
+        catatanPengiriman: data.catatanPengiriman || '',
         createdAt: new Date().toISOString(),
       };
 
