@@ -1,4 +1,5 @@
-import admin from 'firebase-admin';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // In-memory rate limiting storage di serverless instance
 const rateLimitMap = new Map();
@@ -40,8 +41,9 @@ function maskPhoneNumber(phone) {
  * Inisialisasi Firebase Admin SDK secara aman dari Environment Variables
  */
 function getAdminDb() {
-  if (admin.apps.length > 0) {
-    return admin.firestore();
+  const apps = getApps();
+  if (apps && apps.length > 0) {
+    return getFirestore(apps[0]);
   }
 
   let credential = null;
@@ -50,7 +52,6 @@ function getAdminDb() {
   if (rawEnv) {
     try {
       let raw = rawEnv.trim();
-      // Hapus petik luar jika ada
       if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"'))) {
         raw = raw.slice(1, -1).trim();
       }
@@ -67,7 +68,7 @@ function getAdminDb() {
         serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
       }
 
-      credential = admin.credential.cert(serviceAccount);
+      credential = cert(serviceAccount);
     } catch (e) {
       console.error('Error parsing FIREBASE_SERVICE_ACCOUNT:', e);
       throw new Error(`Format FIREBASE_SERVICE_ACCOUNT tidak valid: ${e.message}`);
@@ -75,7 +76,7 @@ function getAdminDb() {
   } else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
     try {
       const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
-      credential = admin.credential.cert({
+      credential = cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
         privateKey: privateKey,
@@ -88,12 +89,12 @@ function getAdminDb() {
     throw new Error('Environment variable FIREBASE_SERVICE_ACCOUNT belum terbaca di server Vercel. Pastikan sudah klik Save di Environment Variables Vercel lalu lakukan Redeploy.');
   }
 
-  admin.initializeApp({
+  const app = initializeApp({
     credential,
-    projectId: credential.projectId || 'fitbayid',
+    projectId: 'fitbayid',
   });
 
-  return admin.firestore();
+  return getFirestore(app);
 }
 
 export default async function handler(req, res) {
