@@ -152,22 +152,11 @@ export function saveLocalUsers(users) {
 }
 
 /**
- * Memastikan akun tim awal ada di Firestore
+ * Memastikan akun tim awal ada di Firestore tanpa membuat dokumen duplikat
  */
 export async function ensureInitialTeamUsersInFirestore() {
-  try {
-    const defaultUsers = getDefaultTeamUsers();
-    for (const u of defaultUsers) {
-      const q = query(collection(db, COLLECTION_NAME), where('username', '==', u.username.toLowerCase()));
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        const docRef = doc(db, COLLECTION_NAME, u.uid);
-        await setDoc(docRef, u, { merge: true });
-      }
-    }
-  } catch (e) {
-    console.warn('Error auto-seeding team users to Firestore:', e);
-  }
+  // Biarkan Firestore murni dikelola dokumen Auth UID riil
+  return;
 }
 
 /**
@@ -196,8 +185,17 @@ export async function getUserProfile(uid, username, email) {
       if (!qSnap.empty) {
         const foundDoc = qSnap.docs[0];
         const data = foundDoc.data();
-        // Simpan juga ke doc UID agar referensi selanjutnya instan
+        
+        // Simpan ke doc UID riil
         await setDoc(docRef, { ...data, uid }, { merge: true });
+
+        // Jika dokumen lama adalah legacy 'user-xxx', hapus agar tidak duplikat
+        if (foundDoc.id !== uid && foundDoc.id.startsWith('user-')) {
+          try {
+            await deleteDoc(doc(db, COLLECTION_NAME, foundDoc.id));
+          } catch (_) {}
+        }
+
         return { uid, status: data.status || 'active', ...data };
       }
     }
@@ -463,6 +461,24 @@ export async function sendUserPasswordReset(email) {
   }
 }
 
+function deduplicateUsers(rawUsers) {
+  const map = new Map();
+  for (const u of rawUsers) {
+    const key = (u.username || u.name || u.uid || '').toLowerCase().trim();
+    if (!key) continue;
+    if (!map.has(key)) {
+      map.set(key, u);
+    } else {
+      // Prioritaskan dokumen dengan UID riil Firebase Auth
+      const existing = map.get(key);
+      if (existing.uid?.startsWith('user-') && !u.uid?.startsWith('user-')) {
+        map.set(key, u);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 /**
  * Mengambil semua user
  * @returns {Promise<Array>}
@@ -471,18 +487,19 @@ export async function getAllUsers() {
   try {
     const snapshot = await getDocs(collection(db, COLLECTION_NAME));
     if (!snapshot.empty) {
-      const firestoreUsers = snapshot.docs.map((docItem) => ({
+      const rawUsers = snapshot.docs.map((docItem) => ({
         uid: docItem.id,
         status: 'active',
         ...docItem.data(),
       }));
+      const firestoreUsers = deduplicateUsers(rawUsers);
       saveLocalUsers(firestoreUsers);
       return firestoreUsers;
     }
   } catch (err) {
     console.warn('Could not fetch users from Firestore:', err);
   }
-  return getLocalUsers();
+  return deduplicateUsers(getLocalUsers());
 }
 
 /**
@@ -497,11 +514,12 @@ export function subscribeUsers(callback, onError) {
     return onSnapshot(
       usersCollection,
       (snapshot) => {
-        const usersList = snapshot.docs.map((docItem) => ({
+        const rawUsers = snapshot.docs.map((docItem) => ({
           uid: docItem.id,
           status: 'active',
           ...docItem.data(),
         }));
+        const usersList = deduplicateUsers(rawUsers);
         callback(usersList);
       },
       (error) => {
