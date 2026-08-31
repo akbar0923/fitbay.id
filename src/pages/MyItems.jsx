@@ -219,23 +219,61 @@ export default function MyItems() {
   }, [combinedMyItems, statusFilter, search]);
 
   const handleOpenDetail = (item) => {
-    setSelectedDetailItem(item.rawItem || item);
+    setSelectedDetailItem({
+      ...(item.rawItem || {}),
+      ...item,
+    });
     setIsDetailOpen(true);
   };
 
   const handleEditItem = (item) => {
-    if (item.source === 'inventory') {
-      const targetInv = items.find((i) => i.id === item.id) || item.rawItem;
+    if (!item) return;
+
+    // 1. Cek apakah ini transaksi penjualan langsung (TX-LANGSUNG, dimulai dengan tx_, atau memiliki referensiTransaksiId)
+    const isTxItem =
+      item.source === 'transaction' ||
+      String(item.id || '').startsWith('tx_') ||
+      item.rawItem?.referensiTransaksiId ||
+      item.referensiTransaksiId ||
+      item.kodeBarang === 'TX-LANGSUNG';
+
+    if (isTxItem) {
+      const realTxId =
+        item.rawItem?.referensiTransaksiId ||
+        item.referensiTransaksiId ||
+        (String(item.id || '').startsWith('tx_') ? String(item.id).replace('tx_', '') : item.id);
+
+      const targetTx =
+        item.linkedTx ||
+        transactions.find((t) => t.id === realTxId) ||
+        (item.kodeBarang && item.kodeBarang !== 'TX-LANGSUNG'
+          ? transactions.find((t) => t.kodeBarang === item.kodeBarang)
+          : null) ||
+        transactions.find((t) => (t.itemName === item.namaBarang || t.itemName === item.itemName) && (t.ownerName === item.pemilikBarang || t.ownerName === item.ownerName)) ||
+        item.rawItem;
+
+      if (targetTx) {
+        setEditingSalesData({
+          ...targetTx,
+          id: targetTx.id || realTxId,
+        });
+        setIsEditSalesOpen(true);
+        return;
+      }
+    }
+
+    // 2. Jika bukan transaksi langsung, cari di koleksi inventaris
+    const targetInv =
+      items.find((i) => i.id === item.id) ||
+      (item.kodeBarang ? items.find((i) => i.kodeBarang === item.kodeBarang) : null) ||
+      item.rawItem ||
+      item;
+
+    if (targetInv) {
       setEditingInventoryData(targetInv);
       setIsEditInventoryOpen(true);
-    } else if (item.source === 'transaction' || item.linkedTx) {
-      const targetTx = item.linkedTx || transactions.find((t) => t.id === item.rawItem?.referensiTransaksiId);
-      if (targetTx) {
-        setEditingSalesData(targetTx);
-        setIsEditSalesOpen(true);
-      } else {
-        toast.error('Data transaksi tidak ditemukan.');
-      }
+    } else {
+      toast.error('Data barang tidak ditemukan.');
     }
   };
 
