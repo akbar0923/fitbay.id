@@ -7,7 +7,6 @@ import {
   markItemAsSold,
   restoreItemToUnsold,
   getNextItemCode,
-  getLocalInventory,
 } from '../firebase/inventoryService';
 import { useAuth } from './AuthContext';
 import toast from 'react-hot-toast';
@@ -16,7 +15,7 @@ const InventoryContext = createContext(null);
 
 export function InventoryProvider({ children }) {
   const { user } = useAuth();
-  const [items, setItems] = useState(() => getLocalInventory());
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Real-time synchronization

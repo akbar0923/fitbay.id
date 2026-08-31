@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
-  getWithdrawals,
+  subscribeWithdrawals,
   addWithdrawalDoc,
   updateWithdrawalDoc,
   deleteWithdrawalDoc,
@@ -13,26 +13,26 @@ export function WithdrawalProvider({ children }) {
   const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // REAL-TIME LISTENER: Berlangganan data penarikan saldo secara real-time dari Firestore
   useEffect(() => {
-    loadWithdrawals();
-  }, []);
+    setLoading(true);
+    const unsubscribe = subscribeWithdrawals(
+      (list) => {
+        setWithdrawals(list);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Real-time withdrawals listener error:', err);
+        setLoading(false);
+      }
+    );
 
-  const loadWithdrawals = async () => {
-    try {
-      setLoading(true);
-      const data = await getWithdrawals();
-      setWithdrawals(data);
-    } catch (err) {
-      console.error('Error loading withdrawals:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => unsubscribe();
+  }, []);
 
   const addWithdrawal = async (data) => {
     try {
       const saved = await addWithdrawalDoc(data);
-      setWithdrawals((prev) => [saved, ...prev.filter((w) => w.id !== saved.id)]);
       toast.success(`Penarikan untuk "${saved.recipientName}" berhasil dicatat!`);
       return saved;
     } catch (err) {
@@ -45,9 +45,6 @@ export function WithdrawalProvider({ children }) {
   const updateWithdrawal = async (id, data) => {
     try {
       const updated = await updateWithdrawalDoc(id, data);
-      setWithdrawals((prev) =>
-        prev.map((w) => (w.id === id ? updated : w))
-      );
       toast.success('Data penarikan berhasil diperbarui!');
       return updated;
     } catch (err) {
@@ -60,7 +57,6 @@ export function WithdrawalProvider({ children }) {
   const deleteWithdrawal = async (id) => {
     try {
       await deleteWithdrawalDoc(id);
-      setWithdrawals((prev) => prev.filter((w) => w.id !== id));
       toast.success('Data penarikan berhasil dihapus!');
     } catch (err) {
       console.error('Error deleting withdrawal:', err);
@@ -69,7 +65,7 @@ export function WithdrawalProvider({ children }) {
     }
   };
 
-  // Map total penarikan per recipientKey (nominal asli yang mengurangi saldo)
+  // Map total penarikan per recipientKey (nominal asli yang memotong saldo)
   const totalWithdrawnByRecipient = useMemo(() => {
     const map = {};
     withdrawals.forEach((w) => {
@@ -120,7 +116,7 @@ export function WithdrawalProvider({ children }) {
     const key = (recipientKey || '').toLowerCase();
     const teamKeys = ['akbar', 'nesa', 'andin', 'ritza'];
     
-    // Jika untuk anggota tim, gabungkan seluruh penarikan akun tersebut (baik dari komisi tim maupun barang pribadi)
+    // Jika untuk anggota tim, gabungkan seluruh penarikan akun tersebut
     if (teamKeys.includes(key)) {
       return withdrawals.reduce((sum, w) => {
         const wKey = (w.recipientKey || '').toLowerCase();
@@ -191,7 +187,6 @@ export function WithdrawalProvider({ children }) {
     getTotalWithdrawnByOwner,
     getRemainingBalance,
     totalWithdrawnByRecipient,
-    refreshWithdrawals: loadWithdrawals,
   };
 
   return (

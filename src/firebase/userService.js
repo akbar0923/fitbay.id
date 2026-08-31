@@ -486,57 +486,32 @@ export async function getAllUsers() {
 }
 
 /**
- * Subscribe real-time list pengguna dari Firestore dengan deduplikasi dan merge data tim
+ * Subscribe real-time list pengguna murni dari Firestore
  * @param {function} callback
+ * @param {function} onError
  * @returns {function} unsubscribe function
  */
-export function subscribeUsers(callback) {
-  // 1. Panggil segera dengan data lokal agar render pertama langsung instan
-  const initialLocal = getLocalUsers();
-  callback(initialLocal);
-
-  // 2. Auto-seed akun tim default jika belum ada di Firestore
-  ensureInitialTeamUsersInFirestore().catch(() => {});
-
+export function subscribeUsers(callback, onError) {
   const usersCollection = collection(db, COLLECTION_NAME);
   try {
     return onSnapshot(
       usersCollection,
       (snapshot) => {
-        const defaultUsers = getDefaultTeamUsers();
-        const userMap = new Map();
-
-        // Masukkan default users terlebih dahulu sebagai base
-        defaultUsers.forEach((u) => {
-          if (u.username) userMap.set(u.username.toLowerCase(), u);
-        });
-
-        // Timpa dengan data Firestore yang paling mutakhir (realtime dari server)
-        if (!snapshot.empty) {
-          snapshot.docs.forEach((docItem) => {
-            const data = docItem.data();
-            const cleanUser = (data.username || '').toLowerCase();
-            if (cleanUser) {
-              const prev = userMap.get(cleanUser) || {};
-              userMap.set(cleanUser, { ...prev, ...data, uid: docItem.id });
-            } else {
-              userMap.set(docItem.id, { uid: docItem.id, ...data });
-            }
-          });
-        }
-
-        const finalList = Array.from(userMap.values());
-        saveLocalUsers(finalList);
-        callback(finalList);
+        const usersList = snapshot.docs.map((docItem) => ({
+          uid: docItem.id,
+          status: 'active',
+          ...docItem.data(),
+        }));
+        callback(usersList);
       },
       (error) => {
-        console.warn('Error listening to users collection, using cached local data:', error);
-        callback(getLocalUsers());
+        console.warn('Real-time users onSnapshot error:', error);
+        if (onError) onError(error);
       }
     );
   } catch (e) {
-    console.warn('Failed to attach onSnapshot listener:', e);
-    callback(getDefaultTeamUsers());
+    console.warn('Failed to attach onSnapshot listener for users:', e);
+    if (onError) onError(e);
     return () => {};
   }
 }

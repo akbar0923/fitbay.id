@@ -2,6 +2,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
@@ -25,6 +26,38 @@ function saveLocalConfig(config) {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(config));
   } catch (e) {
     console.warn('Error saving local profit sharing config:', e);
+  }
+}
+
+/**
+ * Real-time listener untuk konfigurasi pembagian hasil dari Firestore
+ * @param {Function} callback
+ * @returns {Function} Unsubscribe
+ */
+export function subscribeProfitSharingSettings(callback) {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, DOC_ID);
+    return onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const cfg = data.config || PROFIT_SHARING_CONFIG;
+          saveLocalConfig(cfg);
+          callback(cfg);
+        } else {
+          callback(PROFIT_SHARING_CONFIG);
+        }
+      },
+      (error) => {
+        console.warn('Settings onSnapshot error:', error);
+        callback(getLocalConfig());
+      }
+    );
+  } catch (err) {
+    console.warn('Error attaching subscribeProfitSharingSettings:', err);
+    callback(getLocalConfig());
+    return () => {};
   }
 }
 

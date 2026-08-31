@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import {
-  getOwners,
+  subscribeOwners,
   addOwnerDoc,
   updateOwnerDoc,
   deleteOwnerDoc,
@@ -13,29 +13,26 @@ export function OwnerProvider({ children }) {
   const [owners, setOwners] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // REAL-TIME LISTENER: Berlangganan data pemilik secara real-time dari Firestore
   useEffect(() => {
-    loadOwners();
-  }, []);
+    setLoading(true);
+    const unsubscribe = subscribeOwners(
+      (ownersList) => {
+        setOwners(ownersList);
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Real-time owners listener error:', err);
+        setLoading(false);
+      }
+    );
 
-  const loadOwners = async () => {
-    try {
-      setLoading(true);
-      const data = await getOwners();
-      setOwners(data);
-    } catch (err) {
-      console.error('Error loading owners:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => unsubscribe();
+  }, []);
 
   const addOwner = async (data) => {
     try {
       const saved = await addOwnerDoc(data);
-      setOwners((prev) => {
-        const filtered = prev.filter((o) => o.id !== saved.id);
-        return [...filtered, saved].sort((a, b) => a.name.localeCompare(b.name));
-      });
       toast.success(`Pemilik "${saved.name}" berhasil disimpan!`);
       return saved;
     } catch (err) {
@@ -48,11 +45,6 @@ export function OwnerProvider({ children }) {
   const updateOwner = async (id, data) => {
     try {
       const updated = await updateOwnerDoc(id, data);
-      setOwners((prev) =>
-        prev
-          .map((o) => (o.id === id ? updated : o))
-          .sort((a, b) => a.name.localeCompare(b.name))
-      );
       toast.success('Data pemilik berhasil diperbarui!');
       return updated;
     } catch (err) {
@@ -65,7 +57,6 @@ export function OwnerProvider({ children }) {
   const deleteOwner = async (id) => {
     try {
       await deleteOwnerDoc(id);
-      setOwners((prev) => prev.filter((o) => o.id !== id));
       toast.success('Pemilik barang berhasil dihapus!');
     } catch (err) {
       console.error('Error deleting owner:', err);
@@ -80,7 +71,6 @@ export function OwnerProvider({ children }) {
     addOwner,
     updateOwner,
     deleteOwner,
-    refreshOwners: loadOwners,
   };
 
   return <OwnerContext.Provider value={value}>{children}</OwnerContext.Provider>;

@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { INITIAL_SPREADSHEET_DATA } from '../../constants/initialSalesData';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { parseSpreadsheetFile, parsePastedText, downloadSpreadsheetTemplate } from '../../utils/spreadsheetParser';
 import toast from 'react-hot-toast';
@@ -29,29 +28,6 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
     setPastedText('');
     setProgress(0);
     onClose();
-  };
-
-  // Load static initial data (24 items)
-  const handleLoadInitialData = () => {
-    const defaultData = INITIAL_SPREADSHEET_DATA.map((item, idx) => ({
-      _rowId: idx + 1,
-      itemName: item.itemName,
-      owner: item.owner,
-      category: item.category,
-      costPrice: Number(item.costPrice || 0),
-      sellingPrice: Number(item.sellingPrice),
-      paymentMethod: 'Transfer Bank',
-      status: item.status || 'Terjual',
-      date: date,
-    }));
-
-    setItems(defaultData);
-    setFileInfo({
-      name: 'Data Bawaan Fitbay.id (Seed Data)',
-      size: '24 item',
-      isDefault: true,
-    });
-    toast.success('24 data contoh berhasil dimuat!');
   };
 
   // Process uploaded file
@@ -221,18 +197,6 @@ export default function ImportSpreadsheetModal({ isOpen, onClose, onImportBatch 
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 12 12 16.5m0 0L16.5 12M12 16.5V3" />
               </svg>
               Unduh Template Excel
-            </button>
-
-            <button
-              type="button"
-              onClick={handleLoadInitialData}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium dark:bg-surface-300 bg-white border dark:border-white/10 border-gray-300 dark:text-gray-300 text-gray-700 hover:dark:text-white hover:bg-gray-50 dark:hover:bg-white/10 transition-colors shadow-sm"
-            >
-              <svg className="w-3.5 h-3.5 text-purple" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-              </svg>
-              Muat Data Bawaan (24 Item)
             </button>
 
             <div className="flex items-center gap-1.5 pl-2 border-l dark:border-white/10 border-gray-200">

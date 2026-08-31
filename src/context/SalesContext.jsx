@@ -4,12 +4,14 @@ import { calculateProfitSharing } from '../utils/calculateProfitSharing';
 import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
 import {
   getTransactions,
+  subscribeTransactions,
   addTransactionDoc,
   updateTransactionDoc,
   deleteTransactionDoc,
 } from '../firebase/firestoreService';
 import {
   getProfitSharingSettings,
+  subscribeProfitSharingSettings,
   saveProfitSharingSettings,
 } from '../firebase/settingsService';
 import { restoreItemToUnsold } from '../firebase/inventoryService';
@@ -34,17 +36,20 @@ function salesReducer(state, action) {
         transactions: action.payload,
       };
 
-    case ACTIONS.ADD_TRANSACTION:
+    case ACTIONS.ADD_TRANSACTION: {
+      const exists = state.transactions.some((t) => t.id === action.payload.id);
+      if (exists) return state;
       return {
         ...state,
         transactions: [action.payload, ...state.transactions],
       };
+    }
 
     case ACTIONS.UPDATE_TRANSACTION:
       return {
         ...state,
         transactions: state.transactions.map((tx) =>
-          tx.id === action.payload.id ? action.payload : tx
+          tx.id === action.payload.id ? { ...tx, ...action.payload } : tx
         ),
       };
 
@@ -72,42 +77,37 @@ export function SalesProvider({ children }) {
     transactions: [],
   });
 
-  // Load data transaksi dan setting bagi hasil dari Firestore on mount
+  // REAL-TIME LISTENER: Berlangganan transaksi & pengaturan bagi hasil dari Firestore
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    setLoading(true);
+    setError(null);
 
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Load settings & transactions secara paralel
-      const [txsData, settingsConfig] = await Promise.all([
-        getTransactions(),
-        getProfitSharingSettings(),
-      ]);
-
-      dispatch({ type: ACTIONS.SET_TRANSACTIONS, payload: txsData });
-      if (settingsConfig) {
-        setProfitSharingConfig(settingsConfig);
+    // 1. Subscribe ke koleksi transaksi
+    const unsubscribeTransactions = subscribeTransactions(
+      (transactionsList) => {
+        dispatch({ type: ACTIONS.SET_TRANSACTIONS, payload: transactionsList });
+        setLoading(false);
+      },
+      (err) => {
+        console.error('Real-time transaction listener error:', err);
+        setError('Gagal memuat data transaksi real-time.');
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('Error loading data:', err);
-      setError('Gagal memuat data. Periksa koneksi internet Anda.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    );
 
-  const loadTransactions = async () => {
-    try {
-      const data = await getTransactions();
-      dispatch({ type: ACTIONS.SET_TRANSACTIONS, payload: data });
-    } catch (err) {
-      console.error('Error loading transactions:', err);
-    }
-  };
+    // 2. Subscribe ke setting bagi hasil
+    const unsubscribeSettings = subscribeProfitSharingSettings((newConfig) => {
+      if (newConfig) {
+        setProfitSharingConfig(newConfig);
+      }
+    });
+
+    // Cleanup: Unsubscribe saat unmount agar tidak terjadi memory leak
+    return () => {
+      unsubscribeTransactions();
+      unsubscribeSettings();
+    };
+  }, []);
 
   // Update persentase bagi hasil
   const updateProfitSharingConfig = async (newConfig) => {
