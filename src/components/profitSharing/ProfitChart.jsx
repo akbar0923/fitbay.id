@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { PROFIT_SHARING_CONFIG } from '../../constants/profitSharingConfig';
+import { useSales } from '../../context/SalesContext';
 import { calculateTotalSharing } from '../../utils/calculateProfitSharing';
 import { formatCurrency } from '../../utils/formatCurrency';
 
@@ -10,7 +10,6 @@ const CustomTooltip = ({ active, payload }) => {
     return (
       <div className="dark:bg-surface-300 bg-white dark:border-white/10 border-gray-200 border rounded-xl p-3 shadow-xl">
         <p className="text-sm font-semibold dark:text-white text-gray-900">{data.name}</p>
-        <p className="text-xs dark:text-gray-400 text-gray-500">{data.percentage}%</p>
         <p className="text-sm font-bold" style={{ color: data.fill }}>{formatCurrency(data.value)}</p>
       </div>
     );
@@ -19,16 +18,18 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function ProfitChart({ filteredTransactions }) {
+  const { profitSharingConfig } = useSales();
+
   const chartData = useMemo(() => {
-    const totals = calculateTotalSharing(filteredTransactions || []);
-    
-    return Object.entries(PROFIT_SHARING_CONFIG).map(([key, config]) => ({
+    const totals = calculateTotalSharing(filteredTransactions || [], profitSharingConfig);
+
+    return Object.entries(profitSharingConfig || {}).map(([key, config]) => ({
       name: config.label,
       value: totals[key] || 0,
       percentage: config.percentage,
       fill: config.color,
     }));
-  }, [filteredTransactions]);
+  }, [filteredTransactions, profitSharingConfig]);
 
   const totalProfit = chartData.reduce((sum, d) => sum + d.value, 0);
   const hasData = totalProfit > 0;
@@ -80,7 +81,6 @@ export default function ProfitChart({ filteredTransactions }) {
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.fill }} />
                   <div>
                     <p className="text-sm dark:text-white text-gray-900 font-medium">{item.name}</p>
-                    <p className="text-xs dark:text-gray-500 text-gray-400">{item.percentage}%</p>
                   </div>
                 </div>
                 <p className="text-sm font-bold" style={{ color: item.fill }}>
