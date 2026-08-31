@@ -14,7 +14,7 @@ import {
   subscribeProfitSharingSettings,
   saveProfitSharingSettings,
 } from '../firebase/settingsService';
-import { restoreItemToUnsold } from '../firebase/inventoryService';
+import { restoreItemToUnsold, restoreItemsByTransactionRef } from '../firebase/inventoryService';
 import toast from 'react-hot-toast';
 
 const SalesContext = createContext();
@@ -314,12 +314,12 @@ export function SalesProvider({ children }) {
   const deleteTransaction = async (id) => {
     try {
       const targetTx = state.transactions.find((t) => t.id === id);
-      if (targetTx?.inventoryItemId) {
-        try {
-          await restoreItemToUnsold(targetTx.inventoryItemId);
-        } catch (invErr) {
-          console.warn('Could not restore inventory item to unsold:', invErr);
-        }
+      
+      // Cascade: Kembalikan seluruh barang terkait transaksi ini menjadi Belum Terjual
+      try {
+        await restoreItemsByTransactionRef(id, targetTx?.inventoryItemId);
+      } catch (invErr) {
+        console.warn('Could not restore inventory item to unsold:', invErr);
       }
 
       // Hapus dari Firestore

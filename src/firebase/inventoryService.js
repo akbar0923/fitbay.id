@@ -225,6 +225,41 @@ export async function restoreItemToUnsold(id) {
 }
 
 /**
+ * Mengembalikan seluruh barang yang terhubung dengan transaksi ke status Belum Terjual
+ * @param {string} transactionId
+ * @param {string} [specificItemId]
+ * @returns {Promise<void>}
+ */
+export async function restoreItemsByTransactionRef(transactionId, specificItemId = null) {
+  if (specificItemId) {
+    try {
+      await restoreItemToUnsold(specificItemId);
+    } catch (e) {
+      console.warn(`Gagal restore barang id ${specificItemId}:`, e);
+    }
+  }
+
+  if (transactionId) {
+    try {
+      const snap = await getDocs(getInventoryRef());
+      const updates = [];
+      snap.forEach((d) => {
+        if (d.id === COUNTER_DOC_ID) return;
+        const item = d.data();
+        if (item.referensiTransaksiId === transactionId) {
+          updates.push(restoreItemToUnsold(d.id));
+        }
+      });
+      if (updates.length > 0) {
+        await Promise.all(updates);
+      }
+    } catch (err) {
+      console.warn('Gagal mencari referensi barang terkait transaksi:', err);
+    }
+  }
+}
+
+/**
  * Menghapus data barang dari inventaris
  * @param {string} id
  * @returns {Promise<void>}

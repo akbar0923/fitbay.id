@@ -8,6 +8,7 @@ import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
+import OwnerItemsModal from '../components/owners/OwnerItemsModal';
 
 const defaultCustomScheme = {
   pemilikBarang: 90,
@@ -25,8 +26,10 @@ export default function Owners() {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isItemsModalOpen, setIsItemsModalOpen] = useState(false);
   const [editingOwner, setEditingOwner] = useState(null);
   const [deletingOwner, setDeletingOwner] = useState(null);
+  const [viewingOwner, setViewingOwner] = useState(null);
 
   const initialFormData = {
     name: '',
@@ -296,14 +299,22 @@ export default function Owners() {
                         {formatCurrency(stat.totalShare)}
                       </td>
                       <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => { setViewingOwner(owner); setIsItemsModalOpen(true); }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold dark:bg-accent/15 bg-accent/10 dark:text-accent text-accent-dark hover:dark:bg-accent/25 hover:bg-accent/20 transition-all border dark:border-accent/20 border-accent/20"
+                            title="Lihat Daftar Barang Titipan"
+                          >
+                            <span>📦</span>
+                            <span>Lihat Barang</span>
+                          </button>
                           <button
                             onClick={() => handleOpenEdit(owner)}
                             className="p-1.5 rounded-lg dark:text-gray-400 text-gray-500 hover:text-blue-400 dark:hover:bg-blue-500/10 transition-colors"
                             title="Edit"
                           >
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.688-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
                             </svg>
                           </button>
                           <button
@@ -515,6 +526,16 @@ export default function Owners() {
           </Button>
         </div>
       </Modal>
+
+      {/* Modal Lihat Barang Milik Pemilik */}
+      <OwnerItemsModal
+        isOpen={isItemsModalOpen}
+        onClose={() => {
+          setIsItemsModalOpen(false);
+          setViewingOwner(null);
+        }}
+        owner={viewingOwner}
+      />
     </div>
   );
 }

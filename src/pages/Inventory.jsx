@@ -70,6 +70,26 @@ export default function Inventory() {
     return result;
   }, [items, search, filterStatus, filterCategory, filterOwner]);
 
+  // Ringkasan khusus saat memfilter pemilik tertentu
+  const filteredOwnerStats = useMemo(() => {
+    if (filterOwner === 'ALL') return null;
+    const ownerItems = items.filter(
+      (item) => item.pemilikBarang?.toLowerCase() === filterOwner.toLowerCase()
+    );
+    const total = ownerItems.length;
+    const readyCount = ownerItems.filter((i) => i.status === 'Belum Terjual').length;
+    const soldCount = ownerItems.filter((i) => i.status === 'Terjual').length;
+    const totalCapital = ownerItems.reduce((sum, i) => sum + (Number(i.hargaModal) || 0), 0);
+
+    return {
+      name: filterOwner,
+      total,
+      readyCount,
+      soldCount,
+      totalCapital,
+    };
+  }, [items, filterOwner]);
+
   const handleOpenAdd = () => {
     setEditingItem(null);
     setIsFormOpen(true);
@@ -360,6 +380,34 @@ export default function Inventory() {
             </select>
           </div>
         </div>
+
+        {/* Banner Ringkasan Khusus Pemilik yang Sedang Difilter */}
+        {filteredOwnerStats && (
+          <div className="mt-4 pt-3.5 border-t dark:border-white/5 border-gray-200 flex flex-wrap items-center justify-between gap-3 text-xs bg-accent/5 p-3 rounded-xl border border-accent/15 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-accent/20 text-accent font-bold flex items-center justify-center text-xs">
+                {filteredOwnerStats.name.charAt(0).toUpperCase()}
+              </div>
+              <span className="font-bold dark:text-white text-gray-900">
+                Ringkasan Barang Penitip: {filteredOwnerStats.name}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="dark:text-gray-300 text-gray-700">
+                Total: <strong className="dark:text-white text-gray-900 font-bold">{filteredOwnerStats.total} item</strong>
+              </span>
+              <span className="text-amber-400">
+                Ready: <strong>{filteredOwnerStats.readyCount} item</strong>
+              </span>
+              <span className="text-emerald-400">
+                Terjual: <strong>{filteredOwnerStats.soldCount} item</strong>
+              </span>
+              <span className="text-purple-400">
+                Total Modal: <strong>{formatCurrency(filteredOwnerStats.totalCapital)}</strong>
+              </span>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Table Data Barang */}

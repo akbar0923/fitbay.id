@@ -11,6 +11,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import OwnerPortal from './pages/OwnerPortal';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
+import MyItems from './pages/MyItems';
 import SalesData from './pages/SalesData';
 import Owners from './pages/Owners';
 import ProfitSharing from './pages/ProfitSharing';
@@ -76,6 +77,7 @@ export default function App() {
                           <Routes>
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/inventory" element={<Inventory />} />
+                            <Route path="/my-items" element={<MyItems />} />
                             <Route path="/sales" element={<SalesData />} />
                             
                             {/* Halaman Kelola Pemilik (Super Admin & Admin Operasional) */}
