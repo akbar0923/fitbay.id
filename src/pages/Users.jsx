@@ -116,6 +116,7 @@ export default function Users() {
     setFormData({
       name: '',
       username: '',
+      email: '',
       password: '',
       confirmPassword: '',
       role: USER_ROLES.STAFF,
@@ -161,6 +162,7 @@ export default function Users() {
       const created = await createUserByAdmin({
         name: formData.name,
         username: cleanUsername,
+        email: formData.email ? formData.email.trim().toLowerCase() : undefined,
         password: formData.password,
         role: formData.role,
         title: formData.title || (formData.role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : formData.role === USER_ROLES.ADMIN ? 'Admin' : 'Staff & Host Live'),
@@ -737,6 +739,14 @@ export default function Users() {
               </p>
             )}
           </div>
+
+          <Input
+            type="email"
+            label="Email Aktif (Email Pribadi / Gmail)"
+            placeholder="Contoh: staff@gmail.com (opsional)"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+          />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select

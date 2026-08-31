@@ -232,6 +232,34 @@ export async function getUserProfile(uid, username, email) {
 }
 
 /**
+ * Memastikan akun email terdaftar di Firebase Auth
+ * @param {string} email
+ * @param {string} defaultPassword
+ * @returns {Promise<string|null>}
+ */
+export async function ensureAuthAccountForEmail(email, defaultPassword = 'fitbay_temp_pass_2026') {
+  if (!email || !email.includes('@')) return null;
+  const cleanEmail = email.trim().toLowerCase();
+  const secondaryAppName = `_SyncAuth_${Date.now()}`;
+  let secondaryApp = null;
+  try {
+    secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+    const secondaryAuth = getAuth(secondaryApp);
+    await setPersistence(secondaryAuth, inMemoryPersistence);
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, cleanEmail, defaultPassword);
+    await firebaseSignOut(secondaryAuth);
+    return cred.user.uid;
+  } catch (e) {
+    // Jika email sudah ada di Firebase Auth, tidak apa-apa
+    return null;
+  } finally {
+    if (secondaryApp) {
+      try { await deleteApp(secondaryApp); } catch (_) {}
+    }
+  }
+}
+
+/**
  * Membuat User Baru langsung oleh Super Admin tanpa mengganti sesi login yang aktif.
  * @param {object} param0
  * @returns {Promise<object>} Profil user yang baru dibuat
@@ -239,6 +267,7 @@ export async function getUserProfile(uid, username, email) {
 export async function createUserByAdmin({
   name,
   username,
+  email: customEmail,
   password,
   role = USER_ROLES.STAFF,
   title = '',
@@ -253,7 +282,11 @@ export async function createUserByAdmin({
     throw new Error('Password minimal 6 karakter.');
   }
 
-  const email = usernameToInternalEmail(cleanUsername);
+  // Gunakan email asli jika diisi, atau format internal
+  const effectiveEmail = (customEmail && customEmail.includes('@'))
+    ? customEmail.trim().toLowerCase()
+    : usernameToInternalEmail(cleanUsername);
+
   const secondaryAppName = `_TempAuth_${Date.now()}`;
   let secondaryApp = null;
   let newUid = null;
@@ -266,7 +299,7 @@ export async function createUserByAdmin({
     await setPersistence(secondaryAuth, inMemoryPersistence);
 
     // Buat akun baru di Firebase Auth
-    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(secondaryAuth, effectiveEmail, password);
     newUid = userCredential.user.uid;
 
     await firebaseSignOut(secondaryAuth);
@@ -274,12 +307,12 @@ export async function createUserByAdmin({
     console.error('createUserByAdmin Auth error:', error);
     let errorMsg = error.message;
     if (error.code === 'auth/email-already-in-use') {
-      errorMsg = `Username "${cleanUsername}" sudah terdaftar di Firebase Auth. Akun profil diperbarui.`;
+      // Email sudah terdaftar
     } else if (error.code === 'auth/weak-password') {
       errorMsg = 'Password terlalu lemah. Gunakan minimal 6 karakter.';
       throw new Error(errorMsg);
     } else if (error.code === 'auth/invalid-email') {
-      errorMsg = 'Format email dari username tidak valid.';
+      errorMsg = 'Format email tidak valid.';
       throw new Error(errorMsg);
     }
   } finally {
@@ -293,7 +326,7 @@ export async function createUserByAdmin({
     uid: effectiveUid,
     name: name.trim(),
     username: cleanUsername,
-    email: email,
+    email: effectiveEmail,
     role: role || USER_ROLES.STAFF,
     title: title.trim() || (role === USER_ROLES.SUPER_ADMIN ? 'Super Admin' : role === USER_ROLES.ADMIN ? 'Admin' : 'Staff Fitbay'),
     status: 'active',
@@ -406,11 +439,18 @@ export async function deleteUserAccount(uid) {
 }
 
 /**
- * Mengirim email reset password ke pengguna
+ * Mengirim email reset password ke pengguna (secara dinamis memastikan akun terdaftar di Firebase Auth)
  * @param {string} email
  */
 export async function sendUserPasswordReset(email) {
-  await sendPasswordResetEmail(auth, email);
+  if (!email) throw new Error('Alamat email tidak boleh kosong');
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Pastikan email terdaftar di Firebase Auth
+  await ensureAuthAccountForEmail(cleanEmail);
+
+  // Kirim email reset password resmi dari Firebase
+  await sendPasswordResetEmail(auth, cleanEmail);
 }
 
 /**
