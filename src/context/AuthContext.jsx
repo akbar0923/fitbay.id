@@ -63,8 +63,8 @@ export function AuthProvider({ children }) {
 
           setUser({
             uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            username: username,
+            email: profile.email || firebaseUser.email,
+            username: profile.username || username,
             name: profile.name || username,
             role: profile.role || 'staff',
             title: profile.title || 'Team Member',
@@ -79,8 +79,8 @@ export function AuthProvider({ children }) {
             email: firebaseUser.email,
             username: username,
             name: clean === 'muhbar' ? 'Akbar' : clean === 'nessa' ? 'Nessa' : clean === 'admin' ? 'Admin' : username,
-            role: isAdminUser ? 'admin' : 'staff',
-            title: isAdminUser ? (clean === 'muhbar' ? 'Founder & Admin' : clean === 'nessa' ? 'Co-Founder & Admin' : 'Super Admin') : 'Staff & Host Live',
+            role: isAdminUser ? 'superadmin' : 'staff',
+            title: isAdminUser ? 'Super Admin' : 'Staff & Host Live',
             status: 'active',
           });
         }
