@@ -231,18 +231,20 @@ export default function InventoryDetailModal({ isOpen, onClose, item, onMarkSold
             </Button>
 
             <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  onClose();
-                  onEdit(item);
-                }}
-              >
-                ✏️ Edit Data
-              </Button>
+              {onEdit && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    onClose();
+                    onEdit(item);
+                  }}
+                >
+                  ✏️ Edit Data
+                </Button>
+              )}
 
-              {!isSold && (
+              {!isSold && onMarkSold && (
                 <Button
                   size="sm"
                   onClick={() => {

@@ -4,20 +4,38 @@ import { useInventory } from '../context/InventoryContext';
 import { useSales } from '../context/SalesContext';
 import { formatCurrency, formatDate } from '../utils/formatCurrency';
 import EmptyState from '../components/ui/EmptyState';
+import Button from '../components/ui/Button';
 import { SkeletonCard, SkeletonTable } from '../components/ui/Skeleton';
 import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
+import InventoryFormModal from '../components/inventory/InventoryFormModal';
+import SalesFormModal from '../components/sales/SalesFormModal';
+import toast from 'react-hot-toast';
 
 export default function MyItems() {
   const { user } = useAuth();
-  const { items, loading: inventoryLoading } = useInventory();
-  const { transactions, loading: salesLoading, profitSharingConfig } = useSales();
+  const { items, loading: inventoryLoading, updateItem } = useInventory();
+  const { transactions, loading: salesLoading, profitSharingConfig, updateTransaction, addTransaction } = useSales();
 
   const loading = inventoryLoading || salesLoading;
 
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Belum Terjual' | 'Terjual'
   const [search, setSearch] = useState('');
+
+  // Modals state
   const [selectedDetailItem, setSelectedDetailItem] = useState(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Edit Inventory state
+  const [isEditInventoryOpen, setIsEditInventoryOpen] = useState(false);
+  const [editingInventoryData, setEditingInventoryData] = useState(null);
+
+  // Edit Sales state
+  const [isEditSalesOpen, setIsEditSalesOpen] = useState(false);
+  const [editingSalesData, setEditingSalesData] = useState(null);
+
+  // Quick Sell state
+  const [isQuickSellOpen, setIsQuickSellOpen] = useState(false);
+  const [quickSellData, setQuickSellData] = useState(null);
 
   // Normalisasi identitas pengguna yang sedang login untuk pencocokan nama pemilik barang
   const userIdentifiers = useMemo(() => {
@@ -106,6 +124,7 @@ export default function MyItems() {
         hakPemilik: hakPemilik,
         source: 'inventory',
         rawItem: item,
+        linkedTx,
       });
     });
 
@@ -141,19 +160,30 @@ export default function MyItems() {
           id: `tx_${tx.id}`,
           kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
           namaBarang: tx.itemName,
-          kategori: tx.category || 'Baju',
-          status: 'Terjual',
+          kategori: tx.category,
           pemilikBarang: tx.ownerName,
+          status: 'Terjual',
+          hargaModal: Number(tx.costPrice) || 0,
+          hargaJual: Number(tx.sellingPrice) || 0,
+          sellingPrice: Number(tx.sellingPrice) || 0,
+          profit: Number(tx.profit) || 0,
+          namaPenerima: tx.namaPenerima,
+          noHpPenerima: tx.noHpPenerima,
+          alamatPenerima: tx.alamatPenerima,
+          sumberPesanan: tx.sumberPesanan,
+          ekspedisi: tx.ekspedisi,
+          resi: tx.resi,
           tanggalMasuk: tx.date,
           tanggalTerjual: tx.date,
-          hargaModal: 0,
+          referensiTransaksiId: tx.id,
           catatan: tx.notes,
         },
+        linkedTx: tx,
       });
     });
 
     return result;
-  }, [items, transactions, userIdentifiers]);
+  }, [items, transactions, userIdentifiers, profitSharingConfig]);
 
   // Statistik Ringkasan Barang Saya
   const stats = useMemo(() => {
@@ -191,6 +221,79 @@ export default function MyItems() {
   const handleOpenDetail = (item) => {
     setSelectedDetailItem(item.rawItem || item);
     setIsDetailOpen(true);
+  };
+
+  const handleEditItem = (item) => {
+    if (item.source === 'inventory') {
+      const targetInv = items.find((i) => i.id === item.id) || item.rawItem;
+      setEditingInventoryData(targetInv);
+      setIsEditInventoryOpen(true);
+    } else if (item.source === 'transaction' || item.linkedTx) {
+      const targetTx = item.linkedTx || transactions.find((t) => t.id === item.rawItem?.referensiTransaksiId);
+      if (targetTx) {
+        setEditingSalesData(targetTx);
+        setIsEditSalesOpen(true);
+      } else {
+        toast.error('Data transaksi tidak ditemukan.');
+      }
+    }
+  };
+
+  const handleMarkSold = (item) => {
+    const raw = item.rawItem || item;
+    setQuickSellData({
+      itemName: raw.namaBarang,
+      ownerName: raw.pemilikBarang || user?.name || 'Akbar',
+      category: raw.kategori || 'Baju',
+      costPrice: String(raw.hargaModal || 0),
+      kodeBarang: raw.kodeBarang || '',
+      inventoryItemId: raw.id,
+      sellingPrice: '',
+      date: new Date().toISOString().split('T')[0],
+      paymentMethod: 'Transfer Bank',
+      sumberPesanan: 'WhatsApp',
+      status: 'Terjual',
+    });
+    setIsQuickSellOpen(true);
+  };
+
+  // Submit Handler: Edit Data Inventaris
+  const handleInventoryEditSubmit = async (formData) => {
+    try {
+      if (editingInventoryData?.id) {
+        await updateItem(editingInventoryData.id, formData);
+        toast.success(`Barang [${formData.kodeBarang}] berhasil diperbarui!`);
+      }
+      setIsEditInventoryOpen(false);
+      setEditingInventoryData(null);
+    } catch (err) {
+      console.error('Error updating inventory in MyItems:', err);
+      toast.error('Gagal memperbarui data barang.');
+    }
+  };
+
+  // Submit Handler: Edit Data Transaksi Penjualan
+  const handleSalesEditSubmit = async (formData) => {
+    try {
+      if (editingSalesData?.id) {
+        await updateTransaction(editingSalesData.id, formData);
+      }
+      setIsEditSalesOpen(false);
+      setEditingSalesData(null);
+    } catch (err) {
+      console.error('Error updating transaction in MyItems:', err);
+    }
+  };
+
+  // Submit Handler: Tandai Terjual (Quick Sell)
+  const handleQuickSellSubmit = async (formData) => {
+    try {
+      await addTransaction(formData);
+      setIsQuickSellOpen(false);
+      setQuickSellData(null);
+    } catch (err) {
+      console.error('Error quick sell in MyItems:', err);
+    }
   };
 
   return (
@@ -254,89 +357,65 @@ export default function MyItems() {
           <div className="dark:bg-surface-200 bg-white border border-emerald-500/20 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
             <div>
               <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-2">
-                Barang Sudah Laku
+                Barang Terjual
               </span>
               <p className="text-3xl font-extrabold text-emerald-400 tracking-tight">
                 {stats.soldCount} <span className="text-sm font-normal text-emerald-400/70">item</span>
               </p>
             </div>
-            <p className="text-xs text-emerald-400/80 mt-3 flex items-center gap-1">
-              <span>✓</span>
-              <span>{stats.total > 0 ? Math.round((stats.soldCount / stats.total) * 100) : 0}% Tingkat Penjualan</span>
+            <p className="text-xs text-emerald-400/80 mt-3">
+              Total Hasil: {formatCurrency(stats.totalEarned)}
             </p>
           </div>
 
-          {/* Total Hak Penjualan */}
-          <div className="dark:bg-surface-200 bg-white border border-purple-500/20 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+          {/* Total Hak Bagi Hasil */}
+          <div className="dark:bg-surface-200 bg-white border border-accent/20 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
             <div>
-              <span className="text-xs font-bold text-purple-400 uppercase tracking-wider block mb-2">
-                Total Hak dari Barang Terjual
+              <span className="text-xs font-bold text-accent uppercase tracking-wider block mb-2">
+                Total Hak Penghasilan
               </span>
-              <p className="text-2xl lg:text-3xl font-extrabold text-purple-400 tracking-tight">
+              <p className="text-2xl lg:text-3xl font-extrabold text-accent tracking-tight">
                 {formatCurrency(stats.totalEarned)}
               </p>
             </div>
-            <p className="text-xs text-purple-400/80 mt-3 leading-relaxed">
-              Sesuai skema bagi hasil barang Anda
+            <p className="text-xs dark:text-gray-400 text-gray-500 mt-3">
+              Akumulasi dari seluruh barang terjual
             </p>
           </div>
         </div>
       )}
 
-      {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        {/* Status Tabs */}
-        <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          <button
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-              statusFilter === 'ALL'
-                ? 'bg-accent text-dark-800 shadow-sm'
-                : 'dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 dark:text-gray-300 text-gray-700 hover:dark:bg-white/5'
-            }`}
-          >
-            Semua ({stats.total})
-          </button>
-          <button
-            onClick={() => setStatusFilter('Belum Terjual')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-              statusFilter === 'Belum Terjual'
-                ? 'bg-amber-500 text-white shadow-sm'
-                : 'dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 dark:text-gray-300 text-gray-700 hover:dark:bg-white/5'
-            }`}
-          >
-            Belum Terjual ({stats.readyCount})
-          </button>
-          <button
-            onClick={() => setStatusFilter('Terjual')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
-              statusFilter === 'Terjual'
-                ? 'bg-emerald-500 text-white shadow-sm'
-                : 'dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 dark:text-gray-300 text-gray-700 hover:dark:bg-white/5'
-            }`}
-          >
-            Terjual ({stats.soldCount})
-          </button>
+      {/* Filter Tabs & Search Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl dark:bg-surface-200 bg-gray-100 border dark:border-white/5 border-gray-200 w-full sm:w-auto">
+          {[
+            { key: 'ALL', label: `Semua (${stats.total})` },
+            { key: 'Belum Terjual', label: `Ready (${stats.readyCount})` },
+            { key: 'Terjual', label: `Terjual (${stats.soldCount})` },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setStatusFilter(tab.key)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                statusFilter === tab.key
+                  ? 'bg-accent text-dark-800 shadow-sm'
+                  : 'dark:text-gray-400 text-gray-600 hover:text-white'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Input Search */}
-        <div className="relative w-full sm:w-72">
-          <svg
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 dark:text-gray-500 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-          </svg>
+        <div className="w-full sm:w-72">
           <input
             type="text"
-            placeholder="Cari nama barang atau kode SKU..."
+            placeholder="Cari nama barang / kode..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl text-xs
-              dark:bg-surface-200 bg-white dark:text-white text-gray-900
+            className="w-full px-3.5 py-2 rounded-xl text-xs dark:bg-surface-200 bg-white
+              dark:text-white text-gray-900 placeholder-gray-400
               dark:border-white/10 border-gray-300 border
               focus:outline-none focus:ring-2 focus:ring-accent/50"
           />
@@ -409,17 +488,29 @@ export default function MyItems() {
                     </span>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-[10px] dark:text-gray-500 text-gray-400 block">
-                      {isSold ? 'Tgl Terjual' : 'Tgl Masuk'}
-                    </span>
-                    <span className="dark:text-gray-300 text-gray-700 font-medium">
-                      {isSold && item.tanggalTerjual
-                        ? formatDate(item.tanggalTerjual)
-                        : item.tanggalMasuk
-                        ? formatDate(item.tanggalMasuk)
-                        : '-'}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditItem(item);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 hover:bg-accent/20 hover:text-accent dark:hover:text-accent transition-all text-gray-600 dark:text-gray-300"
+                    >
+                      ✏️ Edit
+                    </button>
+                    {!isSold && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkSold(item);
+                        }}
+                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-accent text-dark-800 hover:brightness-110 shadow-sm transition-all"
+                      >
+                        🏷️ Jual
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -428,7 +519,7 @@ export default function MyItems() {
         </div>
       )}
 
-      {/* Detail Item Modal */}
+      {/* Modal: Detail Item */}
       {selectedDetailItem && (
         <InventoryDetailModal
           isOpen={isDetailOpen}
@@ -437,8 +528,49 @@ export default function MyItems() {
             setSelectedDetailItem(null);
           }}
           item={selectedDetailItem}
+          onEdit={(itemToEdit) => {
+            setIsDetailOpen(false);
+            handleEditItem(itemToEdit);
+          }}
+          onMarkSold={(itemToSell) => {
+            setIsDetailOpen(false);
+            handleMarkSold(itemToSell);
+          }}
         />
       )}
+
+      {/* Modal: Edit Data Inventaris */}
+      <InventoryFormModal
+        isOpen={isEditInventoryOpen}
+        onClose={() => {
+          setIsEditInventoryOpen(false);
+          setEditingInventoryData(null);
+        }}
+        onSubmit={handleInventoryEditSubmit}
+        editData={editingInventoryData}
+      />
+
+      {/* Modal: Edit Data Transaksi Penjualan */}
+      <SalesFormModal
+        isOpen={isEditSalesOpen}
+        onClose={() => {
+          setIsEditSalesOpen(false);
+          setEditingSalesData(null);
+        }}
+        onSubmit={handleSalesEditSubmit}
+        editData={editingSalesData}
+      />
+
+      {/* Modal: Quick Sell to Penjualan */}
+      <SalesFormModal
+        isOpen={isQuickSellOpen}
+        onClose={() => {
+          setIsQuickSellOpen(false);
+          setQuickSellData(null);
+        }}
+        onSubmit={handleQuickSellSubmit}
+        editData={quickSellData}
+      />
     </div>
   );
 }
