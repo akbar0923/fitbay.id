@@ -15,6 +15,19 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     
     <title>Fitbay.id — Finance & Stock Tracker</title>
+    <script>
+      // Otomatis arahkan action URL reset password ke HashRouter jika dibuka langsung
+      (function() {
+        var params = new URLSearchParams(window.location.search);
+        var oobCode = params.get('oobCode') || params.get('code');
+        var mode = params.get('mode');
+        if (oobCode || mode === 'resetPassword') {
+          if (!window.location.hash.includes('reset-password')) {
+            window.location.replace('/#/reset-password?' + params.toString());
+          }
+        }
+      })();
+    </script>
   </head>
   <body class="dark:bg-[#0F0F0F] bg-gray-50 text-white">
     <div id="root"></div>

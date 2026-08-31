@@ -11,9 +11,14 @@ export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Ambil oobCode dari query params (?oobCode=... atau ?code=...)
-  const oobCode = searchParams.get('oobCode') || searchParams.get('code');
-  const mode = searchParams.get('mode');
+  // Ambil oobCode dari HashRouter params maupun window.location.search
+  const globalParams = new URLSearchParams(window.location.search);
+  const oobCode =
+    searchParams.get('oobCode') ||
+    searchParams.get('code') ||
+    globalParams.get('oobCode') ||
+    globalParams.get('code');
+  const mode = searchParams.get('mode') || globalParams.get('mode');
 
   const [verifying, setVerifying] = useState(true);
   const [email, setEmail] = useState('');
