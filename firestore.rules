@@ -3,68 +3,85 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function: Apakah pengguna sudah login
+    // Helper: Cek apakah pengguna sudah login terautentikasi
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function: Apakah pengguna adalah Admin
+    // Helper: Ambil data profil pengguna yang sedang login
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Helper: Cek apakah role pengguna adalah 'admin' atau 'superadmin' (murni dari database, tanpa hardcode email)
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email in ['muhbar@fitbay.id', 'nessa@fitbay.id', 'akbar@fitbay.id', 'nesa@fitbay.id', 'admin@admin.id'] ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        getUserData().role == 'admin' ||
+        getUserData().role == 'superadmin'
       );
     }
 
-    // 1. Transaksi Penjualan
-    // Read diizinkan publik (untuk rekonsiliasi portal pemilik)
-    // Staff & Admin bisa menambah dan mengedit, HANYA Admin yang berhak menghapus
+    // 1. Koleksi Transaksi Penjualan
+    // Hanya pengguna yang terautentikasi (staf/admin) yang berhak membaca data
+    // Staf & Admin bisa menambah dan mengedit transaksi
+    // HANYA Admin/Superadmin yang berhak menghapus transaksi
     match /transactions/{transactionId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
     
     // 2. Data Inventaris & Stok Barang
-    // Read diizinkan publik (untuk cek status barang titipan)
-    // Staff & Admin bisa menambah dan mengedit, HANYA Admin yang berhak menghapus
+    // Hanya pengguna yang terautentikasi yang berhak membaca data stok
+    // Staf & Admin bisa mendata dan mengedit barang
+    // HANYA Admin/Superadmin yang berhak menghapus barang dari inventaris
     match /inventory/{itemId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 
-    // 3. Pemilik Barang (Titipan)
-    // Read diizinkan publik (untuk verifikasi data pemilik di portal)
-    // Staff & Admin bisa menambah/edit, HANYA Admin yang berhak menghapus
+    // 3. Data Pemilik Barang (Titipan / Consignor)
+    // Hanya pengguna yang terautentikasi yang berhak membaca data pemilik
+    // Staf & Admin bisa menambah/mengedit data pemilik
+    // HANYA Admin/Superadmin yang berhak menghapus pemilik
     match /owners/{ownerId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 
-    // 4. Riwayat Penarikan Saldo
-    // Read diizinkan publik (untuk riwayat pencairan pemilik)
-    // HANYA Admin yang berhak mencatat/mengubah/menghapus penarikan
+    // 4. Riwayat Penarikan Saldo (Withdrawals)
+    // Hanya pengguna yang terautentikasi yang berhak membaca data penarikan
+    // HANYA Admin/Superadmin yang berhak mencatat/mengubah/menghapus penarikan
     match /withdrawals/{withdrawalId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // 5. Profil Pengguna & Hak Akses (Sensitif)
-    // Pengguna yang login bisa membaca profil tim & update profilnya sendiri
+    // 5. Profil Pengguna & Hak Akses (Users)
+    // Read: Semua pengguna yang sudah login bisa membaca profil tim
+    // Create: HANYA Admin/Superadmin yang boleh membuat akun/dokumen user baru
+    // Update: Admin/Superadmin boleh update user manapun. User biasa hanya boleh update profil miliknya sendiri TANPA mengubah role miliknya
+    // Delete: HANYA Admin/Superadmin yang boleh menghapus akun user
     match /users/{userId} {
-      allow read, create, update: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthenticated() && 
+        request.auth.uid == userId && 
+        request.resource.data.role == resource.data.role
+      );
       allow delete: if isAdmin();
     }
 
-    // 6. Pengaturan Sistem (Persentase Pembagian Hasil)
+    // 6. Pengaturan Sistem & Persentase Bagi Hasil (Settings)
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
     
-    // Blokir total untuk koleksi liar lainnya
+    // Blokir total akses untuk koleksi liar lainnya
     match /{document=**} {
       allow read, write: if false;
     }
