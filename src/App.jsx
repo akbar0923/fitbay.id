@@ -7,6 +7,7 @@ import { WithdrawalProvider } from './context/WithdrawalContext';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import Layout from './components/layout/Layout';
 import Login from './pages/Login';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import OwnerPortal from './pages/OwnerPortal';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
@@ -53,6 +54,10 @@ export default function App() {
         <Routes>
           {/* Login — publik tanpa layout */}
           <Route path="/login" element={<Login />} />
+
+          {/* Reset Password Kustom Fitbay.id */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/auth/action" element={<ResetPasswordPage />} />
 
           {/* Portal Cek Barang & Saldo Khusus Penitip (Publik) */}
           <Route path="/cek-barang" element={<OwnerPortal />} />

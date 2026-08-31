@@ -439,7 +439,7 @@ export async function deleteUserAccount(uid) {
 }
 
 /**
- * Mengirim email reset password ke pengguna (secara dinamis memastikan akun terdaftar di Firebase Auth)
+ * Mengirim email reset password ke pengguna (dengan link kustom ke tampilan web Fitbay.id)
  * @param {string} email
  */
 export async function sendUserPasswordReset(email) {
@@ -449,8 +449,18 @@ export async function sendUserPasswordReset(email) {
   // Pastikan email terdaftar di Firebase Auth
   await ensureAuthAccountForEmail(cleanEmail);
 
-  // Kirim email reset password resmi dari Firebase
-  await sendPasswordResetEmail(auth, cleanEmail);
+  const origin = window.location.origin;
+  const actionCodeSettings = {
+    url: `${origin}/#/reset-password`,
+    handleCodeInApp: true,
+  };
+
+  try {
+    await sendPasswordResetEmail(auth, cleanEmail, actionCodeSettings);
+  } catch (err) {
+    console.warn('sendPasswordResetEmail with actionCodeSettings fallback:', err);
+    await sendPasswordResetEmail(auth, cleanEmail);
+  }
 }
 
 /**
