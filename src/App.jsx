@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SalesProvider } from './context/SalesContext';
 import { OwnerProvider } from './context/OwnerContext';
@@ -22,7 +22,7 @@ import { Toaster } from 'react-hot-toast';
 
 export default function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <AuthProvider>
         <PwaInstallPrompt />
         <Toaster
@@ -126,6 +126,6 @@ export default function App() {
           />
         </Routes>
       </AuthProvider>
-    </HashRouter>
+    </BrowserRouter>
   );
 }

@@ -451,7 +451,7 @@ export async function sendUserPasswordReset(email) {
 
   const origin = window.location.origin;
   const actionCodeSettings = {
-    url: `${origin}/#/reset-password`,
+    url: `${origin}/reset-password`,
     handleCodeInApp: true,
   };
 

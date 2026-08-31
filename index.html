@@ -16,15 +16,11 @@
     
     <title>Fitbay.id — Finance & Stock Tracker</title>
     <script>
-      // Otomatis arahkan action URL reset password ke HashRouter jika dibuka langsung
+      // Otomatis bersihkan tanda pagar (#) jika membuka link lama
       (function() {
-        var params = new URLSearchParams(window.location.search);
-        var oobCode = params.get('oobCode') || params.get('code');
-        var mode = params.get('mode');
-        if (oobCode || mode === 'resetPassword') {
-          if (!window.location.hash.includes('reset-password')) {
-            window.location.replace('/#/reset-password?' + params.toString());
-          }
+        if (window.location.hash && window.location.hash.startsWith('#/')) {
+          var cleanPath = window.location.hash.substring(1);
+          window.history.replaceState(null, '', cleanPath);
         }
       })();
     </script>
