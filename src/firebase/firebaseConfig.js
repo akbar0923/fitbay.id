@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 
 // Konfigurasi Firebase dari environment variables
 // Nilai asli disimpan di file .env (tidak di-commit ke Git)
@@ -22,4 +23,5 @@ export { firebaseConfig };
 // Export Firebase services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functions = getFunctions(app, 'asia-southeast2'); // default / region
 export default app;
