@@ -9,7 +9,7 @@ import {
   updateEmail,
 } from 'firebase/auth';
 import { auth } from '../firebase/firebaseConfig';
-import { getUserProfile, updateUserProfileData } from '../firebase/userService';
+import { getUserProfile, updateUserProfileData, findUsernameByCustomEmail } from '../firebase/userService';
 import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
@@ -25,7 +25,7 @@ const EMAIL_DOMAIN = import.meta.env.VITE_AUTH_EMAIL_DOMAIN || 'fitbay.id';
  *  "andin" → "andin@fitbay.id"
  */
 function usernameToEmail(username) {
-  const clean = username.trim().toLowerCase();
+  const clean = (username || '').trim().toLowerCase();
   if (clean.includes('@')) return clean;
   if (clean === 'admin') return 'admin@admin.id';
   return `${clean}@${EMAIL_DOMAIN}`;
@@ -37,7 +37,7 @@ function usernameToEmail(username) {
  */
 function emailToUsername(email) {
   if (!email) return '';
-  return email.split('@')[0];
+  return email.split('@')[0].toLowerCase();
 }
 
 export function AuthProvider({ children }) {
@@ -95,29 +95,38 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * Login dengan username dan password (dengan domain fallback otomatis)
+   * Login dengan username atau email pribadi (dengan domain fallback otomatis)
    */
-  const login = async (username, password) => {
-    const rawClean = (username || '').trim().toLowerCase();
+  const login = async (usernameOrEmail, password) => {
+    const rawClean = (usernameOrEmail || '').trim().toLowerCase();
     if (!rawClean) {
-      toast.error('Silakan masukkan username');
-      throw new Error('Username kosong');
+      toast.error('Silakan masukkan username atau email');
+      throw new Error('Username atau email kosong');
     }
 
-    // Daftar kemungkinan format email yang terdaftar di Firebase Auth
-    let candidates = [];
+    let resolvedUsernames = [];
+
+    // Jika pengguna memasukkan format email (misal: muhammadakbar200317@gmail.com)
     if (rawClean.includes('@')) {
-      candidates = [rawClean];
+      const matchedUsername = await findUsernameByCustomEmail(rawClean);
+      if (matchedUsername) {
+        resolvedUsernames.push(matchedUsername);
+      }
     } else {
-      candidates = [
-        `${rawClean}@${EMAIL_DOMAIN}`,
-        `${rawClean}@fitbay.id`,
-        `${rawClean}@fitbay.internal`,
-        rawClean === 'admin' ? 'admin@admin.id' : null,
-      ].filter(Boolean);
-      // Hapus duplikat
-      candidates = [...new Set(candidates)];
+      resolvedUsernames.push(rawClean);
     }
+
+    // Bangun daftar kandidat email untuk dicocokkan ke Firebase Auth
+    let candidates = [rawClean];
+
+    resolvedUsernames.forEach((u) => {
+      candidates.push(`${u}@${EMAIL_DOMAIN}`);
+      candidates.push(`${u}@fitbay.id`);
+      candidates.push(`${u}@fitbay.internal`);
+      if (u === 'admin') candidates.push('admin@admin.id');
+    });
+
+    candidates = [...new Set(candidates.filter(Boolean))];
 
     let authResult = null;
     let lastError = null;
@@ -128,7 +137,7 @@ export function AuthProvider({ children }) {
         if (authResult?.user) break;
       } catch (err) {
         lastError = err;
-        // Jika password salah pada user yang ditemukan, tidak perlu coba domain lain
+        // Jika password salah pada akun yang ditemukan, hentikan loop
         if (err.code === 'auth/wrong-password') break;
       }
     }

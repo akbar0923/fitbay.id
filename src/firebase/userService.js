@@ -38,8 +38,34 @@ export function usernameToInternalEmail(username) {
 }
 
 /**
- * Mendapatkan daftar user default tim Fitbay.id
+ * Mencari username berdasarkan alamat email asli/kustom pengguna
+ * @param {string} customEmail
+ * @returns {Promise<string|null>}
  */
+export async function findUsernameByCustomEmail(customEmail) {
+  if (!customEmail) return null;
+  const cleanEmail = customEmail.trim().toLowerCase();
+
+  // 1. Cek dari local users cache
+  const localUsers = getLocalUsers();
+  const foundLocal = localUsers.find(
+    (u) => u.email && u.email.trim().toLowerCase() === cleanEmail
+  );
+  if (foundLocal?.username) return foundLocal.username;
+
+  // 2. Cek langsung dari Firestore database
+  try {
+    const q = query(collection(db, COLLECTION_NAME), where('email', '==', cleanEmail));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const data = snap.docs[0].data();
+      if (data.username) return data.username;
+    }
+  } catch (e) {
+    console.warn('Error querying user by email:', e);
+  }
+  return null;
+}
 export function getDefaultTeamUsers() {
   return [
     {
