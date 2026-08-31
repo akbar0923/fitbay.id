@@ -3,7 +3,7 @@ import admin from 'firebase-admin';
 // In-memory rate limiting storage di serverless instance
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 menit
-const MAX_REQUESTS_PER_WINDOW = 20;
+const MAX_REQUESTS_PER_WINDOW = 30;
 
 function checkRateLimit(clientIp) {
   const now = Date.now();
@@ -45,21 +45,34 @@ function getAdminDb() {
   }
 
   let credential = null;
+  const rawEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
 
-  // 1. Cek dari FIREBASE_SERVICE_ACCOUNT (JSON String atau Base64)
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  if (rawEnv) {
     try {
-      const raw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
-      const jsonStr = raw.startsWith('{') ? raw : Buffer.from(raw, 'base64').toString('utf8');
-      const serviceAccount = JSON.parse(jsonStr);
+      let raw = rawEnv.trim();
+      // Hapus petik luar jika ada
+      if ((raw.startsWith("'") && raw.endsWith("'")) || (raw.startsWith('"') && raw.endsWith('"'))) {
+        raw = raw.slice(1, -1).trim();
+      }
+
+      let serviceAccount;
+      if (raw.startsWith('{')) {
+        serviceAccount = JSON.parse(raw);
+      } else {
+        const decoded = Buffer.from(raw, 'base64').toString('utf8');
+        serviceAccount = JSON.parse(decoded);
+      }
+
+      if (serviceAccount.private_key && typeof serviceAccount.private_key === 'string') {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
+
       credential = admin.credential.cert(serviceAccount);
     } catch (e) {
-      console.warn('Gagal mem-parse FIREBASE_SERVICE_ACCOUNT JSON:', e.message);
+      console.error('Error parsing FIREBASE_SERVICE_ACCOUNT:', e);
+      throw new Error(`Format FIREBASE_SERVICE_ACCOUNT tidak valid: ${e.message}`);
     }
-  }
-
-  // 2. Cek dari variabel terpisah
-  if (!credential && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  } else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
     try {
       const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n');
       credential = admin.credential.cert({
@@ -68,18 +81,17 @@ function getAdminDb() {
         privateKey: privateKey,
       });
     } catch (e) {
-      console.warn('Gagal inisialisasi credential dari env individual:', e.message);
+      console.error('Error in individual env vars:', e);
+      throw new Error(`Kredensial individual tidak valid: ${e.message}`);
     }
+  } else {
+    throw new Error('Environment variable FIREBASE_SERVICE_ACCOUNT belum terbaca di server Vercel. Pastikan sudah klik Save di Environment Variables Vercel lalu lakukan Redeploy.');
   }
 
-  if (credential) {
-    admin.initializeApp({ credential });
-  } else {
-    // Fallback default credentials jika berjalan di GCP / Google Cloud environment
-    admin.initializeApp({
-      projectId: process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID,
-    });
-  }
+  admin.initializeApp({
+    credential,
+    projectId: credential.projectId || 'fitbayid',
+  });
 
   return admin.firestore();
 }
@@ -134,7 +146,7 @@ export default async function handler(req, res) {
       const oName = (oData.name || '').trim().toLowerCase();
       const oPhoneDigits = (oData.phone || '').replace(/\D/g, '');
 
-      const nameMatches = oName === cleanQueryLower || oName.includes(cleanQueryLower);
+      const nameMatches = oName === cleanQueryLower || oName.includes(cleanQueryLower) || cleanQueryLower.includes(oName);
       const phoneMatches =
         cleanDigitsQuery.length >= 4 &&
         oPhoneDigits.length >= 4 &&
@@ -237,7 +249,7 @@ export default async function handler(req, res) {
     return res.status(500).json({
       success: false,
       found: false,
-      message: 'Gagal memproses pencarian barang di server. Periksa konfigurasi kredensial Firebase Service Account.',
+      message: error.message || 'Gagal memproses pencarian barang di server.',
       error: error.message,
     });
   }
