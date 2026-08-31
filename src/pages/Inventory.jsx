@@ -2,9 +2,11 @@ import { useState, useMemo } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { useOwners } from '../context/OwnerContext';
 import { useSales } from '../context/SalesContext';
+import { useAuth } from '../context/AuthContext';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
+import Modal from '../components/ui/Modal';
 import { SkeletonCard, SkeletonTable } from '../components/ui/Skeleton';
 import { formatCurrency, formatDate } from '../utils/formatCurrency';
 import { CATEGORIES } from '../constants/profitSharingConfig';
@@ -12,12 +14,20 @@ import InventoryFormModal from '../components/inventory/InventoryFormModal';
 import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
 import DeleteInventoryModal from '../components/inventory/DeleteInventoryModal';
 import SalesFormModal from '../components/sales/SalesFormModal';
+import BulkActionBar from '../components/common/BulkActionBar';
+import { restoreItemToUnsold } from '../firebase/inventoryService';
 import toast from 'react-hot-toast';
 
 export default function Inventory() {
   const { items, loading, stats, addItem, updateItem, deleteItem, markAsSold } = useInventory();
   const { owners } = useOwners();
   const { addTransaction } = useSales();
+  const { isAdmin, isSuperAdmin } = useAuth();
+
+  // Selection States
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   // Filter States
   const [search, setSearch] = useState('');
@@ -89,6 +99,70 @@ export default function Inventory() {
       totalCapital,
     };
   }, [items, filterOwner]);
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === filteredItems.length && filteredItems.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map((i) => i.id)));
+    }
+  };
+
+  const handleToggleSelectOne = (id, e) => {
+    e?.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkStatusChange = async (newStatus) => {
+    if (selectedIds.size === 0) return;
+    setBulkActionLoading(true);
+    try {
+      const promises = Array.from(selectedIds).map(async (id) => {
+        if (newStatus === 'Belum Terjual') {
+          return restoreItemToUnsold(id);
+        } else {
+          return updateItem(id, {
+            status: 'Terjual',
+            tanggalTerjual: new Date().toISOString().split('T')[0],
+          });
+        }
+      });
+      await Promise.all(promises);
+      toast.success(`Berhasil mengubah status ${selectedIds.size} barang menjadi ${newStatus}!`);
+      setSelectedIds(new Set());
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal mengubah status massal.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkActionLoading(true);
+    try {
+      const count = selectedIds.size;
+      const promises = Array.from(selectedIds).map((id) => deleteItem(id));
+      await Promise.all(promises);
+      toast.success(`Berhasil menghapus ${count} barang secara massal!`);
+      setSelectedIds(new Set());
+      setIsBulkDeleteModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal menghapus beberapa data barang.');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
 
   const handleOpenAdd = () => {
     setEditingItem(null);
@@ -416,19 +490,28 @@ export default function Inventory() {
           <table className="w-full text-left text-sm">
             <thead className="dark:bg-white/[0.02] bg-gray-50/80 border-b dark:border-white/5 border-gray-200 text-xs dark:text-gray-400 text-gray-500 uppercase tracking-wider">
               <tr>
-                <th className="px-6 py-4 font-semibold">Kode Barang</th>
-                <th className="px-6 py-4 font-semibold">Nama Barang & Catatan</th>
-                <th className="px-6 py-4 font-semibold">Kategori</th>
-                <th className="px-6 py-4 font-semibold">Pemilik Barang</th>
-                <th className="px-6 py-4 font-semibold">Harga Modal</th>
-                <th className="px-6 py-4 font-semibold">Status</th>
-                <th className="px-6 py-4 font-semibold text-right">Aksi</th>
+                <th className="px-4 py-4 w-12 text-center">
+                  <input
+                    type="checkbox"
+                    checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                    onChange={handleToggleSelectAll}
+                    className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                    title="Pilih Semua / Batal Pilih Semua"
+                  />
+                </th>
+                <th className="px-4 py-4 font-semibold">Kode Barang</th>
+                <th className="px-4 py-4 font-semibold">Nama Barang & Catatan</th>
+                <th className="px-4 py-4 font-semibold">Kategori</th>
+                <th className="px-4 py-4 font-semibold">Pemilik Barang</th>
+                <th className="px-4 py-4 font-semibold">Harga Modal</th>
+                <th className="px-4 py-4 font-semibold">Status</th>
+                <th className="px-4 py-4 font-semibold text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y dark:divide-white/5 divide-gray-200">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12">
+                  <td colSpan={8} className="px-6 py-12">
                     <EmptyState
                       icon="📦"
                       title="Belum Ada Data Barang"
@@ -448,14 +531,29 @@ export default function Inventory() {
               ) : (
                 filteredItems.map((item) => {
                   const isSold = item.status === 'Terjual';
+                  const isSelected = selectedIds.has(item.id);
 
                   return (
                     <tr
                       key={item.id}
-                      className="dark:hover:bg-white/[0.02] hover:bg-gray-50/80 transition-colors"
+                      className={`transition-colors ${
+                        isSelected
+                          ? 'dark:bg-accent/10 bg-accent/5'
+                          : 'dark:hover:bg-white/[0.02] hover:bg-gray-50/80'
+                      }`}
                     >
+                      {/* Checkbox */}
+                      <td className="px-4 py-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleToggleSelectOne(item.id, e)}
+                          className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                        />
+                      </td>
+
                       {/* Kode Barang */}
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-accent/15 text-accent border border-accent/30 tracking-wider">
                           <span>🏷️</span>
                           <span>{item.kodeBarang}</span>
@@ -463,7 +561,7 @@ export default function Inventory() {
                       </td>
 
                       {/* Nama Barang & Catatan */}
-                      <td className="px-6 py-4 max-w-xs">
+                      <td className="px-4 py-4 max-w-xs">
                         <div className="space-y-0.5">
                           <button
                             onClick={() => handleOpenDetail(item)}
@@ -476,47 +574,47 @@ export default function Inventory() {
                               {item.catatan}
                             </p>
                           )}
-                          <span className="text-[10px] dark:text-gray-500 text-gray-400 block">
-                            Masuk: {item.tanggalMasuk ? formatDate(item.tanggalMasuk) : '-'}
-                          </span>
                         </div>
                       </td>
 
                       {/* Kategori */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-700 border dark:border-white/5 border-gray-200">
-                          {item.kategori}
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-700">
+                          {item.kategori || 'Baju'}
                         </span>
                       </td>
 
                       {/* Pemilik Barang */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-semibold text-accent dark:text-accent text-xs">
-                          {item.pemilikBarang}
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold dark:text-gray-200 text-gray-800">
+                          <span className="w-5 h-5 rounded-full bg-purple/15 text-purple text-[10px] font-bold flex items-center justify-center">
+                            {item.pemilikBarang?.charAt(0)?.toUpperCase() || '?'}
+                          </span>
+                          {item.pemilikBarang || '-'}
                         </span>
                       </td>
 
                       {/* Harga Modal */}
-                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-bold dark:text-gray-200 text-gray-800">
-                        {formatCurrency(item.hargaModal || 0)}
+                      <td className="px-4 py-4 whitespace-nowrap font-medium text-xs dark:text-gray-300 text-gray-700">
+                        {formatCurrency(item.hargaModal)}
                       </td>
 
                       {/* Status */}
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-4 py-4 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                          className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
                             isSold
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isSold ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
+                          <span>{isSold ? '✅' : '⏳'}</span>
                           <span>{item.status}</span>
                         </span>
                       </td>
 
                       {/* Aksi */}
-                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <td className="px-4 py-4 whitespace-nowrap text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Tombol Tandai Terjual (untuk barang belum terjual) */}
                           {!isSold ? (
@@ -617,6 +715,82 @@ export default function Inventory() {
         onSubmit={handleQuickSellSubmit}
         editData={quickSellData}
       />
+
+      {/* Floating Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onClearSelection={() => setSelectedIds(new Set())}
+        canDelete={isAdmin || isSuperAdmin}
+        onBulkDelete={() => setIsBulkDeleteModalOpen(true)}
+        deleteLabel="Hapus Barang Terpilih"
+        actions={[
+          {
+            label: 'Ubah ke Terjual',
+            icon: '✅',
+            variant: 'success',
+            hidden: !(isAdmin || isSuperAdmin),
+            disabled: bulkActionLoading,
+            onClick: () => handleBulkStatusChange('Terjual'),
+          },
+          {
+            label: 'Ubah ke Belum Terjual',
+            icon: '⏳',
+            variant: 'secondary',
+            hidden: !(isAdmin || isSuperAdmin),
+            disabled: bulkActionLoading,
+            onClick: () => handleBulkStatusChange('Belum Terjual'),
+          },
+        ]}
+      />
+
+      {/* Modal Konfirmasi Hapus Massal */}
+      <Modal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        title={`Hapus ${selectedIds.size} Barang Sekaligus?`}
+        size="md"
+      >
+        <div className="space-y-4 py-2">
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-start gap-3">
+            <span className="text-xl">⚠️</span>
+            <div className="text-xs space-y-1">
+              <p className="font-bold text-sm text-red-400">Peringatan Aksi Hapus Massal</p>
+              <p>
+                Anda akan menghapus <strong>{selectedIds.size} barang</strong> dari inventaris database. Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+          </div>
+
+          <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 rounded-xl dark:bg-white/5 bg-gray-100 text-xs">
+            {items
+              .filter((i) => selectedIds.has(i.id))
+              .map((i) => (
+                <div key={i.id} className="flex items-center justify-between py-1 border-b dark:border-white/5 border-gray-200 last:border-0">
+                  <span className="font-mono text-accent font-semibold">{i.kodeBarang}</span>
+                  <span className="dark:text-white text-gray-900 font-medium truncate max-w-[180px]">{i.namaBarang}</span>
+                  <span className="text-gray-400">({i.pemilikBarang || '-'})</span>
+                </div>
+              ))}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t dark:border-white/5 border-gray-200">
+            <Button
+              variant="ghost"
+              onClick={() => setIsBulkDeleteModalOpen(false)}
+              disabled={bulkActionLoading}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleBulkDeleteConfirm}
+              loading={bulkActionLoading}
+            >
+              Ya, Hapus {selectedIds.size} Barang
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

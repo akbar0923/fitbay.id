@@ -15,14 +15,21 @@ import {
 import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
 import Button from '../ui/Button';
+import Modal from '../ui/Modal';
 import { SkeletonTable } from '../ui/Skeleton';
 import ShippingLabelModal from './ShippingLabelModal';
+import BulkActionBar from '../common/BulkActionBar';
 import toast from 'react-hot-toast';
 
 export default function SalesTable({ onEdit, onDelete, onAdd }) {
-  const { transactions, loading } = useSales();
-  const { isAdmin } = useAuth();
+  const { transactions, loading, deleteTransaction } = useSales();
+  const { isAdmin, isSuperAdmin } = useAuth();
   const { owners } = useOwners();
+
+  // Selection States
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   const [search, setSearch] = useState('');
   const [filterOwner, setFilterOwner] = useState('');
@@ -44,6 +51,100 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const handleOpenShippingModal = (tx) => {
     setSelectedShippingTx(tx);
     setIsShippingModalOpen(true);
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === paginatedData.length && paginatedData.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedData.map((t) => t.id)));
+    }
+  };
+
+  const handleToggleSelectOne = (id, e) => {
+    e?.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleExportSelected = () => {
+    const selectedData = transactions.filter((t) => selectedIds.has(t.id));
+    if (selectedData.length === 0) return;
+
+    const headers = [
+      'No',
+      'Tanggal',
+      'Kode Barang',
+      'Nama Barang',
+      'Kategori',
+      'Pemilik',
+      'Harga Modal',
+      'Harga Jual',
+      'Keuntungan',
+      'Metode Bayar',
+      'Sumber Pesanan',
+      'Status',
+      'Nama Penerima',
+      'No HP Penerima',
+      'Alamat Penerima',
+      'Ekspedisi',
+      'No Resi',
+    ];
+
+    const rows = selectedData.map((t, idx) => [
+      idx + 1,
+      t.date || '',
+      t.kodeBarang || '',
+      `"${(t.itemName || '').replace(/"/g, '""')}"`,
+      t.category || '',
+      `"${(t.ownerName || '').replace(/"/g, '""')}"`,
+      t.costPrice || 0,
+      t.sellingPrice || 0,
+      t.profit || 0,
+      t.paymentMethod || '',
+      t.sumberPesanan || '',
+      t.status || '',
+      `"${(t.namaPenerima || '').replace(/"/g, '""')}"`,
+      `'${t.noHpPenerima || ''}`,
+      `"${(t.alamatPenerima || '').replace(/"/g, '""')}"`,
+      t.ekspedisi || '',
+      `'${t.resi || ''}`,
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Fitbay_Penjualan_Pilihan_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success(`Berhasil mengekspor ${selectedData.length} data transaksi terpilih! 📊`);
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkActionLoading(true);
+    try {
+      const count = selectedIds.size;
+      const promises = Array.from(selectedIds).map((id) => deleteTransaction(id));
+      await Promise.all(promises);
+      toast.success(`Berhasil menghapus ${count} transaksi terpilih & mengembalikan barang terkait!`);
+      setSelectedIds(new Set());
+      setIsBulkDeleteOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal menghapus beberapa transaksi.');
+    } finally {
+      setBulkActionLoading(false);
+    }
   };
 
   const handleCopyAddress = (tx, e) => {
@@ -327,6 +428,15 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
               <table className="w-full">
                 <thead>
                   <tr className="dark:bg-white/[0.02] bg-gray-50 border-b dark:border-white/5 border-gray-200">
+                    <th className="px-4 py-3 w-12 text-center">
+                      <input
+                        type="checkbox"
+                        checked={paginatedData.length > 0 && selectedIds.size === paginatedData.length}
+                        onChange={handleToggleSelectAll}
+                        className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                        title="Pilih Semua di Halaman Ini"
+                      />
+                    </th>
                     <th onClick={() => handleSort('date')} className="px-4 py-3 text-left text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider cursor-pointer hover:text-accent">
                       Tanggal <SortIcon field="date" />
                     </th>
@@ -370,9 +480,27 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     const payColor = PAYMENT_METHOD_COLORS[tx.paymentMethod || 'Transfer Bank'] || PAYMENT_METHOD_COLORS['Transfer Bank'];
                     const sourceColor = ORDER_SOURCE_COLORS[tx.sumberPesanan || 'WhatsApp'] || ORDER_SOURCE_COLORS['WhatsApp'];
                     const isShopee = tx.sumberPesanan === 'Shopee';
+                    const isSelected = selectedIds.has(tx.id);
 
                     return (
-                      <tr key={tx.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors duration-150">
+                      <tr
+                        key={tx.id}
+                        className={`transition-colors duration-150 ${
+                          isSelected
+                            ? 'dark:bg-accent/10 bg-accent/5'
+                            : 'dark:hover:bg-white/[0.02] hover:bg-gray-50'
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <td className="px-4 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleToggleSelectOne(tx.id, e)}
+                            className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                          />
+                        </td>
+
                         <td className="px-4 py-3.5 text-sm dark:text-gray-300 text-gray-700 whitespace-nowrap">
                           {formatDate(tx.date)}
                         </td>
@@ -499,30 +627,47 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
           </div>
 
           {/* Mobile Cards */}
+          {/* Mobile Cards */}
           <div className="md:hidden space-y-3">
             {paginatedData.map((tx) => {
               const payColor = PAYMENT_METHOD_COLORS[tx.paymentMethod || 'Transfer Bank'] || PAYMENT_METHOD_COLORS['Transfer Bank'];
               const sourceColor = ORDER_SOURCE_COLORS[tx.sumberPesanan || 'WhatsApp'] || ORDER_SOURCE_COLORS['WhatsApp'];
               const isShopee = tx.sumberPesanan === 'Shopee';
+              const isSelected = selectedIds.has(tx.id);
 
               return (
-                <div key={tx.id} className="dark:bg-surface-200 bg-white dark:border dark:border-white/5 border border-gray-200 rounded-2xl p-4 shadow-sm space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {tx.kodeBarang && (
-                          <span className="font-mono text-[11px] font-bold text-accent px-1.5 py-0.5 rounded bg-accent/15 border border-accent/25">
-                            {tx.kodeBarang}
-                          </span>
-                        )}
-                        <p className="text-sm font-semibold dark:text-white text-gray-900">{tx.itemName}</p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs dark:text-gray-400 text-gray-500">
-                        <span>{formatDate(tx.date)}</span>
-                        <span>·</span>
-                        <span className="font-medium text-accent">{tx.ownerName || 'Akbar'}</span>
-                        <span>·</span>
-                        <span>{tx.category}</span>
+                <div
+                  key={tx.id}
+                  className={`dark:bg-surface-200 bg-white dark:border border rounded-2xl p-4 shadow-sm space-y-3 transition-colors ${
+                    isSelected
+                      ? 'border-accent/40 dark:bg-accent/5 bg-accent/5'
+                      : 'dark:border-white/5 border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => handleToggleSelectOne(tx.id, e)}
+                        className="w-4 h-4 mt-0.5 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer shrink-0"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {tx.kodeBarang && (
+                            <span className="font-mono text-[11px] font-bold text-accent px-1.5 py-0.5 rounded bg-accent/15 border border-accent/25">
+                              {tx.kodeBarang}
+                            </span>
+                          )}
+                          <p className="text-sm font-semibold dark:text-white text-gray-900">{tx.itemName}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs dark:text-gray-400 text-gray-500">
+                          <span>{formatDate(tx.date)}</span>
+                          <span>·</span>
+                          <span className="font-medium text-accent">{tx.ownerName || 'Akbar'}</span>
+                          <span>·</span>
+                          <span>{tx.category}</span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -688,6 +833,72 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
               </div>
             </div>
           )}
+
+          {/* Floating Bulk Action Bar */}
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            onClearSelection={() => setSelectedIds(new Set())}
+            canDelete={isAdmin || isSuperAdmin}
+            onBulkDelete={() => setIsBulkDeleteOpen(true)}
+            deleteLabel="Hapus Transaksi Terpilih"
+            actions={[
+              {
+                label: 'Export Terpilih (Excel/CSV)',
+                icon: '📊',
+                variant: 'secondary',
+                onClick: handleExportSelected,
+              },
+            ]}
+          />
+
+          {/* Modal Konfirmasi Hapus Massal Transaksi */}
+          <Modal
+            isOpen={isBulkDeleteOpen}
+            onClose={() => setIsBulkDeleteOpen(false)}
+            title={`Hapus ${selectedIds.size} Transaksi Penjualan?`}
+            size="md"
+          >
+            <div className="space-y-4 py-2">
+              <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-start gap-3">
+                <span className="text-xl">⚠️</span>
+                <div className="text-xs space-y-1">
+                  <p className="font-bold text-sm text-red-400">Peringatan Aksi Hapus Massal</p>
+                  <p>
+                    Menghapus transaksi penjualan akan <strong>secara otomatis mengembalikan status barang terkait di inventaris menjadi Belum Terjual</strong> dan membersihkan data resi/pengirimannya.
+                  </p>
+                </div>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 rounded-xl dark:bg-white/5 bg-gray-100 text-xs">
+                {transactions
+                  .filter((t) => selectedIds.has(t.id))
+                  .map((t) => (
+                    <div key={t.id} className="flex items-center justify-between py-1 border-b dark:border-white/5 border-gray-200 last:border-0">
+                      <span className="dark:text-white text-gray-900 font-medium truncate max-w-[180px]">{t.itemName}</span>
+                      <span className="text-emerald-400 font-bold">{formatCurrency(t.sellingPrice)}</span>
+                      <span className="text-gray-400">({t.ownerName || '-'})</span>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t dark:border-white/5 border-gray-200">
+                <Button
+                  variant="ghost"
+                  onClick={() => setIsBulkDeleteOpen(false)}
+                  disabled={bulkActionLoading}
+                >
+                  Batal
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={handleBulkDeleteConfirm}
+                  loading={bulkActionLoading}
+                >
+                  Ya, Hapus {selectedIds.size} Transaksi
+                </Button>
+              </div>
+            </div>
+          </Modal>
         </>
       )}
     </div>

@@ -15,33 +15,97 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
 
   const ownerName = owner?.name || '';
 
-  // Filter barang milik owner ini
-  const ownerItems = useMemo(() => {
+  // Gabungkan seluruh data barang dari 2 sumber: Koleksi Inventory + Transaksi Penjualan Langsung
+  const combinedOwnerItems = useMemo(() => {
     if (!ownerName) return [];
-    const cleanName = ownerName.trim().toLowerCase();
-    return items.filter(
-      (item) => (item.pemilikBarang || '').trim().toLowerCase() === cleanName
-    );
-  }, [items, ownerName]);
+    const cleanTargetName = ownerName.trim().toLowerCase();
+
+    const result = [];
+    const processedTxIds = new Set();
+    const processedCodes = new Set();
+
+    // 1. Ambil dari koleksi inventory milik owner ini
+    items.forEach((item) => {
+      const oName = (item.pemilikBarang || '').trim().toLowerCase();
+      if (oName !== cleanTargetName) return;
+
+      const isSold = item.status === 'Terjual';
+      let linkedTx = null;
+      if (isSold) {
+        if (item.referensiTransaksiId) {
+          linkedTx = transactions.find((t) => t.id === item.referensiTransaksiId);
+        }
+        if (!linkedTx && item.kodeBarang) {
+          linkedTx = transactions.find((t) => t.kodeBarang === item.kodeBarang);
+        }
+      }
+
+      if (linkedTx) {
+        processedTxIds.add(linkedTx.id);
+      }
+      if (item.kodeBarang) {
+        processedCodes.add(item.kodeBarang.toLowerCase());
+      }
+
+      const hakPemilik = linkedTx?.profitSharing?.pemilikBarang !== undefined
+        ? Number(linkedTx.profitSharing.pemilikBarang) || 0
+        : Number(item.hargaModal) || 0;
+
+      result.push({
+        id: item.id,
+        kodeBarang: item.kodeBarang || 'FB-ITEM',
+        namaBarang: item.namaBarang || 'Barang Tanpa Nama',
+        kategori: item.kategori || 'Baju',
+        catatan: item.catatan || '',
+        status: item.status || 'Belum Terjual',
+        tanggalMasuk: item.tanggalMasuk || item.createdAt || '-',
+        tanggalTerjual: item.tanggalTerjual || linkedTx?.date || null,
+        hargaModal: Number(item.hargaModal) || 0,
+        sellingPrice: linkedTx?.sellingPrice || item.hargaJual || 0,
+        hakPemilik: hakPemilik,
+        source: 'inventory',
+      });
+    });
+
+    // 2. Ambil dari transaksi penjualan langsung yang belum ada di inventory
+    transactions.forEach((tx) => {
+      if (processedTxIds.has(tx.id)) return;
+      if (tx.inventoryItemId && items.some((i) => i.id === tx.inventoryItemId)) return;
+      if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+
+      const txOwner = (tx.ownerName || '').trim().toLowerCase();
+      if (txOwner !== cleanTargetName) return;
+
+      const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
+        ? Number(tx.profitSharing.pemilikBarang) || 0
+        : (Number(tx.profit) * 0.7) || 0;
+
+      result.push({
+        id: `tx_${tx.id}`,
+        kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
+        namaBarang: tx.itemName || 'Barang Terjual',
+        kategori: tx.category || 'Baju',
+        catatan: tx.notes || 'Penjualan Langsung',
+        status: 'Terjual',
+        tanggalMasuk: tx.date || '-',
+        tanggalTerjual: tx.date || '-',
+        hargaModal: 0,
+        sellingPrice: Number(tx.sellingPrice) || 0,
+        hakPemilik: hakPemilik,
+        source: 'transaction',
+      });
+    });
+
+    return result;
+  }, [items, transactions, ownerName]);
 
   // Statistik Keuangan & Jumlah Barang
   const stats = useMemo(() => {
-    const total = ownerItems.length;
-    const readyItems = ownerItems.filter((i) => i.status === 'Belum Terjual');
-    const soldItems = ownerItems.filter((i) => i.status === 'Terjual');
+    const total = combinedOwnerItems.length;
+    const readyItems = combinedOwnerItems.filter((i) => i.status === 'Belum Terjual');
+    const soldItems = combinedOwnerItems.filter((i) => i.status === 'Terjual');
 
-    let totalEarned = 0;
-    soldItems.forEach((item) => {
-      if (item.referensiTransaksiId) {
-        const tx = transactions.find((t) => t.id === item.referensiTransaksiId);
-        if (tx && tx.profitSharing?.pemilikBarang !== undefined) {
-          totalEarned += Number(tx.profitSharing.pemilikBarang) || 0;
-          return;
-        }
-      }
-      totalEarned += Number(item.hargaModal) || 0;
-    });
-
+    const totalEarned = soldItems.reduce((sum, item) => sum + (Number(item.hakPemilik) || 0), 0);
     const totalWithdrawn = getTotalWithdrawnByOwner(ownerName);
     const remainingBalance = Math.max(0, totalEarned - totalWithdrawn);
     const readyCapital = readyItems.reduce((sum, i) => sum + (Number(i.hargaModal) || 0), 0);
@@ -55,11 +119,11 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
       remainingBalance,
       readyCapital,
     };
-  }, [ownerItems, transactions, getTotalWithdrawnByOwner, ownerName]);
+  }, [combinedOwnerItems, getTotalWithdrawnByOwner, ownerName]);
 
   // Filter dan Pencarian
   const filteredItems = useMemo(() => {
-    return ownerItems.filter((item) => {
+    return combinedOwnerItems.filter((item) => {
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const q = search.toLowerCase().trim();
       const matchSearch =
@@ -70,7 +134,7 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
 
       return matchStatus && matchSearch;
     });
-  }, [ownerItems, statusFilter, search]);
+  }, [combinedOwnerItems, statusFilter, search]);
 
   if (!owner) return null;
 
@@ -215,13 +279,6 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
           <div className="max-h-[380px] overflow-y-auto space-y-2 pr-1">
             {filteredItems.map((item) => {
               const isSold = item.status === 'Terjual';
-              const linkedTx = isSold && item.referensiTransaksiId
-                ? transactions.find((t) => t.id === item.referensiTransaksiId)
-                : null;
-
-              const hakPemilik = linkedTx?.profitSharing?.pemilikBarang !== undefined
-                ? linkedTx.profitSharing.pemilikBarang
-                : Number(item.hargaModal) || 0;
 
               return (
                 <div
@@ -247,7 +304,7 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
                         {isSold ? 'Hak Pembagian Hasil' : 'Harga Modal'}
                       </span>
                       <span className="text-xs font-bold text-emerald-400">
-                        {formatCurrency(hakPemilik)}
+                        {formatCurrency(item.hakPemilik)}
                       </span>
                     </div>
 

@@ -171,9 +171,13 @@ export default async function handler(req, res) {
 
     const ownerTargetName = (matchedOwner.name || '').trim();
 
-    // 3. Ambil data inventaris barang penitip (Sanitasi Total: Tanpa field sensitif internal)
+    // 3. Ambil data inventaris barang penitip & transaksi penjualan (Sanitasi Total: Tanpa field sensitif internal)
     const inventorySnap = await db.collection('inventory').get();
+    const transactionsSnap = await db.collection('transactions').get();
+
     const ownerItems = [];
+    const processedTxIds = new Set();
+    const processedCodes = new Set();
 
     inventorySnap.forEach((docSnap) => {
       if (docSnap.id === '__inventory_counter__') return;
@@ -181,6 +185,13 @@ export default async function handler(req, res) {
       const itemOwner = (item.pemilikBarang || '').trim().toLowerCase();
 
       if (itemOwner === ownerTargetName.toLowerCase()) {
+        if (item.referensiTransaksiId) {
+          processedTxIds.add(item.referensiTransaksiId);
+        }
+        if (item.kodeBarang) {
+          processedCodes.add(item.kodeBarang.toLowerCase());
+        }
+
         ownerItems.push({
           id: docSnap.id,
           kodeBarang: item.kodeBarang || '-',
@@ -189,6 +200,27 @@ export default async function handler(req, res) {
           status: item.status || 'Belum Terjual',
           tanggalMasuk: item.tanggalMasuk || '-',
           tanggalTerjual: item.tanggalTerjual || null,
+        });
+      }
+    });
+
+    // Masukkan transaksi langsung yang belum terhubung ke inventory
+    transactionsSnap.forEach((docSnap) => {
+      const tx = docSnap.data();
+      if (processedTxIds.has(docSnap.id)) return;
+      if (tx.inventoryItemId && inventorySnap.docs.some((d) => d.id === tx.inventoryItemId)) return;
+      if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+
+      const txOwner = (tx.ownerName || '').trim().toLowerCase();
+      if (txOwner === ownerTargetName.toLowerCase()) {
+        ownerItems.push({
+          id: `tx_${docSnap.id}`,
+          kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
+          namaBarang: tx.itemName || 'Barang Terjual',
+          kategori: tx.category || 'Baju',
+          status: 'Terjual',
+          tanggalMasuk: tx.date || '-',
+          tanggalTerjual: tx.date || '-',
         });
       }
     });

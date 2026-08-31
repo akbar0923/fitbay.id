@@ -9,8 +9,10 @@ import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
 
 export default function MyItems() {
   const { user } = useAuth();
-  const { items, loading } = useInventory();
-  const { transactions } = useSales();
+  const { items, loading: inventoryLoading } = useInventory();
+  const { transactions, loading: salesLoading } = useSales();
+
+  const loading = inventoryLoading || salesLoading;
 
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Belum Terjual' | 'Terjual'
   const [search, setSearch] = useState('');
@@ -21,11 +23,10 @@ export default function MyItems() {
   const userIdentifiers = useMemo(() => {
     if (!user) return [];
     const ids = new Set();
-    
+
     if (user.name) ids.add(user.name.trim().toLowerCase());
     if (user.username) ids.add(user.username.trim().toLowerCase());
 
-    // Mapping alias umum tim Fitbay
     const cleanUser = (user.username || '').toLowerCase();
     if (cleanUser === 'muhbar' || cleanUser === 'akbar') {
       ids.add('akbar');
@@ -45,36 +46,111 @@ export default function MyItems() {
     return Array.from(ids);
   }, [user]);
 
-  // Filter seluruh barang milik user yang sedang login
-  const myItemsList = useMemo(() => {
+  // Gabungkan seluruh data barang dari 2 sumber: Koleksi Inventory + Transaksi Penjualan Langsung
+  const combinedMyItems = useMemo(() => {
     if (userIdentifiers.length === 0) return [];
-    return items.filter((item) => {
+
+    const result = [];
+    const processedTxIds = new Set();
+    const processedCodes = new Set();
+
+    // 1. Ambil dari koleksi inventory milik user ini
+    items.forEach((item) => {
       const owner = (item.pemilikBarang || '').trim().toLowerCase();
-      return userIdentifiers.some((id) => owner === id || owner.includes(id));
+      const isMyItem = userIdentifiers.some((id) => owner === id || owner.includes(id));
+      if (!isMyItem) return;
+
+      const isSold = item.status === 'Terjual';
+      let linkedTx = null;
+      if (isSold) {
+        if (item.referensiTransaksiId) {
+          linkedTx = transactions.find((t) => t.id === item.referensiTransaksiId);
+        }
+        if (!linkedTx && item.kodeBarang) {
+          linkedTx = transactions.find((t) => t.kodeBarang === item.kodeBarang);
+        }
+      }
+
+      if (linkedTx) {
+        processedTxIds.add(linkedTx.id);
+      }
+      if (item.kodeBarang) {
+        processedCodes.add(item.kodeBarang.toLowerCase());
+      }
+
+      const hakPemilik = linkedTx?.profitSharing?.pemilikBarang !== undefined
+        ? Number(linkedTx.profitSharing.pemilikBarang) || 0
+        : Number(item.hargaModal) || 0;
+
+      result.push({
+        id: item.id,
+        kodeBarang: item.kodeBarang || 'FB-ITEM',
+        namaBarang: item.namaBarang || 'Barang Tanpa Nama',
+        kategori: item.kategori || 'Baju',
+        catatan: item.catatan || '',
+        status: item.status || 'Belum Terjual',
+        tanggalMasuk: item.tanggalMasuk || item.createdAt || '-',
+        tanggalTerjual: item.tanggalTerjual || linkedTx?.date || null,
+        hargaModal: Number(item.hargaModal) || 0,
+        sellingPrice: linkedTx?.sellingPrice || item.hargaJual || 0,
+        hakPemilik: hakPemilik,
+        source: 'inventory',
+        rawItem: item,
+      });
     });
-  }, [items, userIdentifiers]);
+
+    // 2. Ambil dari koleksi transactions langsung (yang belum terhubung ke inventory)
+    transactions.forEach((tx) => {
+      if (processedTxIds.has(tx.id)) return;
+      if (tx.inventoryItemId && items.some((i) => i.id === tx.inventoryItemId)) return;
+      if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+
+      const txOwner = (tx.ownerName || '').trim().toLowerCase();
+      const isMyTx = userIdentifiers.some((id) => txOwner === id || txOwner.includes(id));
+      if (!isMyTx) return;
+
+      const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
+        ? Number(tx.profitSharing.pemilikBarang) || 0
+        : (Number(tx.profit) * 0.7) || 0;
+
+      result.push({
+        id: `tx_${tx.id}`,
+        kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
+        namaBarang: tx.itemName || 'Barang Terjual',
+        kategori: tx.category || 'Baju',
+        catatan: tx.notes || 'Penjualan Langsung',
+        status: 'Terjual',
+        tanggalMasuk: tx.date || '-',
+        tanggalTerjual: tx.date || '-',
+        hargaModal: 0,
+        sellingPrice: Number(tx.sellingPrice) || 0,
+        hakPemilik: hakPemilik,
+        source: 'transaction',
+        rawItem: {
+          id: `tx_${tx.id}`,
+          kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
+          namaBarang: tx.itemName,
+          kategori: tx.category || 'Baju',
+          status: 'Terjual',
+          pemilikBarang: tx.ownerName,
+          tanggalMasuk: tx.date,
+          tanggalTerjual: tx.date,
+          hargaModal: 0,
+          catatan: tx.notes,
+        },
+      });
+    });
+
+    return result;
+  }, [items, transactions, userIdentifiers]);
 
   // Statistik Ringkasan Barang Saya
   const stats = useMemo(() => {
-    const total = myItemsList.length;
-    const readyItems = myItemsList.filter((i) => i.status === 'Belum Terjual');
-    const soldItems = myItemsList.filter((i) => i.status === 'Terjual');
+    const total = combinedMyItems.length;
+    const readyItems = combinedMyItems.filter((i) => i.status === 'Belum Terjual');
+    const soldItems = combinedMyItems.filter((i) => i.status === 'Terjual');
 
-    // Hitung total estimasi hak dari barang yang terjual
-    let totalEarned = 0;
-    soldItems.forEach((item) => {
-      // 1. Cek dari referensi transaksi riil
-      if (item.referensiTransaksiId) {
-        const tx = transactions.find((t) => t.id === item.referensiTransaksiId);
-        if (tx && tx.profitSharing?.pemilikBarang !== undefined) {
-          totalEarned += Number(tx.profitSharing.pemilikBarang) || 0;
-          return;
-        }
-      }
-      // 2. Fallback hargaModal atau hargaJual
-      totalEarned += Number(item.hargaModal) || 0;
-    });
-
+    const totalEarned = soldItems.reduce((sum, item) => sum + (Number(item.hakPemilik) || 0), 0);
     const readyCapital = readyItems.reduce((sum, i) => sum + (Number(i.hargaModal) || 0), 0);
 
     return {
@@ -84,11 +160,11 @@ export default function MyItems() {
       totalEarned,
       readyCapital,
     };
-  }, [myItemsList, transactions]);
+  }, [combinedMyItems]);
 
   // Filter dan Pencarian
   const filteredItems = useMemo(() => {
-    return myItemsList.filter((item) => {
+    return combinedMyItems.filter((item) => {
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const q = search.toLowerCase().trim();
       const matchSearch =
@@ -99,10 +175,10 @@ export default function MyItems() {
 
       return matchStatus && matchSearch;
     });
-  }, [myItemsList, statusFilter, search]);
+  }, [combinedMyItems, statusFilter, search]);
 
   const handleOpenDetail = (item) => {
-    setSelectedDetailItem(item);
+    setSelectedDetailItem(item.rawItem || item);
     setIsDetailOpen(true);
   };
 
@@ -118,7 +194,7 @@ export default function MyItems() {
             </span>
           </div>
           <p className="text-sm dark:text-gray-400 text-gray-500 mt-1">
-            Daftar barang pribadi Anda yang dititipkan untuk dijual di Fitbay.id
+            Daftar seluruh barang titipan & transaksi atas nama akun Anda (sinkron otomatis real-time)
           </p>
         </div>
       </div>
@@ -265,22 +341,13 @@ export default function MyItems() {
           description={
             search
               ? `Tidak ada barang yang cocok dengan kata kunci "${search}"`
-              : 'Anda belum memiliki barang yang terdaftar atas nama akun ini di Data Barang.'
+              : 'Anda belum memiliki barang yang terdaftar atas nama akun ini di Data Barang maupun Data Penjualan.'
           }
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredItems.map((item) => {
             const isSold = item.status === 'Terjual';
-            const linkedTx = isSold && item.referensiTransaksiId
-              ? transactions.find((t) => t.id === item.referensiTransaksiId)
-              : null;
-
-            const hakPemilik = linkedTx?.profitSharing?.pemilikBarang !== undefined
-              ? linkedTx.profitSharing.pemilikBarang
-              : Number(item.hargaModal) || 0;
-
-            const sellingPrice = linkedTx?.sellingPrice || item.hargaJual || null;
 
             return (
               <div
@@ -327,7 +394,7 @@ export default function MyItems() {
                       {isSold ? 'Hak Pembagian Hasil' : 'Harga Modal / Hak'}
                     </span>
                     <span className="font-extrabold text-sm text-emerald-400">
-                      {formatCurrency(hakPemilik)}
+                      {formatCurrency(item.hakPemilik)}
                     </span>
                   </div>
 
@@ -336,8 +403,8 @@ export default function MyItems() {
                       {isSold ? 'Tgl Terjual' : 'Tgl Masuk'}
                     </span>
                     <span className="dark:text-gray-300 text-gray-700 font-medium">
-                      {isSold && (item.tanggalTerjual || linkedTx?.date)
-                        ? formatDate(item.tanggalTerjual || linkedTx?.date)
+                      {isSold && item.tanggalTerjual
+                        ? formatDate(item.tanggalTerjual)
                         : item.tanggalMasuk
                         ? formatDate(item.tanggalMasuk)
                         : '-'}

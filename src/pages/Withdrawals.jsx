@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useSales } from '../context/SalesContext';
 import { useWithdrawals } from '../context/WithdrawalContext';
 import { useOwners } from '../context/OwnerContext';
+import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDate } from '../utils/formatCurrency';
 import { calculateTotalSharing } from '../utils/calculateProfitSharing';
 import { PROFIT_SHARING_CONFIG, TEAM_MEMBER_KEYS, getTeamMemberKey } from '../constants/profitSharingConfig';
@@ -10,6 +11,8 @@ import Modal from '../components/ui/Modal';
 import Input, { Select } from '../components/ui/Input';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
+import BulkActionBar from '../components/common/BulkActionBar';
+import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
 export default function Withdrawals() {
@@ -24,6 +27,12 @@ export default function Withdrawals() {
     getTotalWithdrawnByOwner,
   } = useWithdrawals();
   const { owners } = useOwners();
+  const { isAdmin, isSuperAdmin } = useAuth();
+
+  // Selection states
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   // Hitung total komisi tim standar (5% tim / 10% ops) dari transaksi terjual
   const totalStandardSharing = useMemo(() => {
@@ -265,6 +274,45 @@ export default function Withdrawals() {
         recipientName: `Pemilik: ${cleanName}`,
         ownerName: cleanName,
       }));
+    }
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === filteredWithdrawals.length && filteredWithdrawals.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredWithdrawals.map((w) => w.id)));
+    }
+  };
+
+  const handleToggleSelectOne = (id, e) => {
+    e?.stopPropagation();
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkActionLoading(true);
+    try {
+      const count = selectedIds.size;
+      const promises = Array.from(selectedIds).map((id) => deleteWithdrawal(id));
+      await Promise.all(promises);
+      toast.success(`Berhasil menghapus ${count} riwayat penarikan terpilih!`);
+      setSelectedIds(new Set());
+      setIsBulkDeleteOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error('Gagal menghapus beberapa data penarikan.');
+    } finally {
+      setBulkActionLoading(false);
     }
   };
 
@@ -827,6 +875,15 @@ export default function Withdrawals() {
             <table className="w-full">
               <thead>
                 <tr className="dark:bg-white/[0.02] bg-gray-50 border-b dark:border-white/5 border-gray-200">
+                  <th className="px-4 py-3 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredWithdrawals.length > 0 && selectedIds.size === filteredWithdrawals.length}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                      title="Pilih Semua Penarikan"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">Tanggal</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">Penerima & Kategori</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider">Nominal Ditarik (Potong Saldo)</th>
@@ -846,9 +903,27 @@ export default function Withdrawals() {
 
                   const rounding = Number(w.roundingAmount) || 0;
                   const totalTf = Number(w.totalTransferred) || Number(w.amount) + rounding;
+                  const isSelected = selectedIds.has(w.id);
 
                   return (
-                    <tr key={w.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors">
+                    <tr
+                      key={w.id}
+                      className={`transition-colors ${
+                        isSelected
+                          ? 'dark:bg-accent/10 bg-accent/5'
+                          : 'dark:hover:bg-white/[0.02] hover:bg-gray-50'
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <td className="px-4 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleToggleSelectOne(w.id, e)}
+                          className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                        />
+                      </td>
+
                       <td className="px-4 py-3.5 text-sm dark:text-gray-300 text-gray-700 whitespace-nowrap">
                         {formatDate(w.date)}
                       </td>
@@ -1336,6 +1411,64 @@ export default function Withdrawals() {
           <Button variant="danger" onClick={handleDeleteConfirm} loading={submitting}>
             Hapus
           </Button>
+        </div>
+      </Modal>
+
+      {/* Floating Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onClearSelection={() => setSelectedIds(new Set())}
+        canDelete={isAdmin || isSuperAdmin}
+        onBulkDelete={() => setIsBulkDeleteOpen(true)}
+        deleteLabel="Hapus Penarikan Terpilih"
+      />
+
+      {/* Modal Konfirmasi Hapus Massal Penarikan */}
+      <Modal
+        isOpen={isBulkDeleteOpen}
+        onClose={() => setIsBulkDeleteOpen(false)}
+        title={`Hapus ${selectedIds.size} Riwayat Penarikan?`}
+        size="md"
+      >
+        <div className="space-y-4 py-2">
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-start gap-3">
+            <span className="text-xl">⚠️</span>
+            <div className="text-xs space-y-1">
+              <p className="font-bold text-sm text-red-400">Peringatan Aksi Hapus Massal</p>
+              <p>
+                Menghapus data riwayat penarikan akan <strong>secara otomatis mengembalikan dan menambah saldo akun/penitip terkait</strong> sesuai nominal yang sebelumnya ditarik.
+              </p>
+            </div>
+          </div>
+
+          <div className="max-h-48 overflow-y-auto space-y-1.5 p-2 rounded-xl dark:bg-white/5 bg-gray-100 text-xs">
+            {withdrawals
+              .filter((w) => selectedIds.has(w.id))
+              .map((w) => (
+                <div key={w.id} className="flex items-center justify-between py-1 border-b dark:border-white/5 border-gray-200 last:border-0">
+                  <span className="dark:text-white text-gray-900 font-bold">{w.recipientName || w.ownerName}</span>
+                  <span className="text-purple-400 font-bold">{formatCurrency(w.amount)}</span>
+                  <span className="text-gray-400">{formatDate(w.date)}</span>
+                </div>
+              ))}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t dark:border-white/5 border-gray-200">
+            <Button
+              variant="ghost"
+              onClick={() => setIsBulkDeleteOpen(false)}
+              disabled={bulkActionLoading}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleBulkDeleteConfirm}
+              loading={bulkActionLoading}
+            >
+              Ya, Hapus {selectedIds.size} Penarikan
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>
