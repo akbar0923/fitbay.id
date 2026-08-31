@@ -81,7 +81,10 @@ export default function Withdrawals() {
       const rawOwner = (tx.ownerName || tx.owner || 'Akbar').trim();
       const lowerOwner = rawOwner.toLowerCase();
       const teamKey = getTeamMemberKey(lowerOwner);
-      const ownerShare = tx.profitSharing?.pemilikBarang ?? (Number(tx.profit || 0) * 0.7);
+      const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 70;
+      const ownerShare = tx.profitSharing?.pemilikBarang !== undefined
+        ? Number(tx.profitSharing.pemilikBarang)
+        : (Number(tx.profit || 0) * defaultOwnerPct) / 100;
 
       if (teamKey && teamGoods[teamKey]) {
         // 1. Jika pemilik barang adalah ANGGOTA TIM -> masuk ke saldo barang pribadi tim

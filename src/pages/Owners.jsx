@@ -64,7 +64,11 @@ export default function Owners() {
         stats[ownerKey].totalItems += 1;
         if (tx.status === 'Terjual') {
           stats[ownerKey].totalRevenue += tx.sellingPrice || 0;
-          stats[ownerKey].totalShare += tx.profitSharing?.pemilikBarang || (tx.profit * 0.7) || 0;
+          const defaultPct = profitSharingConfig?.pemilikBarang?.percentage || 70;
+          const share = tx.profitSharing?.pemilikBarang !== undefined
+            ? Number(tx.profitSharing.pemilikBarang)
+            : ((Number(tx.profit) || 0) * defaultPct) / 100;
+          stats[ownerKey].totalShare += share;
         }
       }
     });
