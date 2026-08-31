@@ -24,23 +24,33 @@ export default function MyItems() {
     if (!user) return [];
     const ids = new Set();
 
-    if (user.name) ids.add(user.name.trim().toLowerCase());
-    if (user.username) ids.add(user.username.trim().toLowerCase());
+    const rawName = (user.name || '').trim().toLowerCase();
+    const rawUsername = (user.username || '').trim().toLowerCase();
 
-    const cleanUser = (user.username || '').toLowerCase();
-    if (cleanUser === 'muhbar' || cleanUser === 'akbar') {
+    // 1. Identifikasi spesifik akun tim Fitbay.id
+    const isAkbar = rawUsername === 'akbar' || rawUsername === 'muhbar' || rawName === 'akbar';
+    const isNesa = rawUsername === 'nesa' || rawUsername === 'nessa' || rawName === 'nesa' || rawName === 'nessa';
+    const isAndin = rawUsername === 'andin' || rawName === 'andin';
+    const isRitza = rawUsername === 'ritza' || rawName === 'ritza';
+
+    if (isAkbar) {
       ids.add('akbar');
       ids.add('muhbar');
-    }
-    if (cleanUser === 'nessa' || cleanUser === 'nesa') {
-      ids.add('nessa');
+    } else if (isNesa) {
       ids.add('nesa');
-    }
-    if (cleanUser === 'andin') {
+      ids.add('nessa');
+    } else if (isAndin) {
       ids.add('andin');
-    }
-    if (cleanUser === 'ritza') {
+    } else if (isRitza) {
       ids.add('ritza');
+    } else {
+      // User non-tim: masukkan nama dan username asli (abaikan nama generik seperti admin)
+      if (rawName && rawName !== 'admin' && rawName !== 'administrator') {
+        ids.add(rawName);
+      }
+      if (rawUsername && rawUsername !== 'admin' && rawUsername !== 'administrator') {
+        ids.add(rawUsername);
+      }
     }
 
     return Array.from(ids);
@@ -54,10 +64,10 @@ export default function MyItems() {
     const processedTxIds = new Set();
     const processedCodes = new Set();
 
-    // 1. Ambil dari koleksi inventory milik user ini
+    // 1. Ambil dari koleksi inventory milik user ini (Pencocokan Persis / Exact Match)
     items.forEach((item) => {
       const owner = (item.pemilikBarang || '').trim().toLowerCase();
-      const isMyItem = userIdentifiers.some((id) => owner === id || owner.includes(id));
+      const isMyItem = userIdentifiers.includes(owner);
       if (!isMyItem) return;
 
       const isSold = item.status === 'Terjual';
@@ -106,7 +116,9 @@ export default function MyItems() {
       if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
 
       const txOwner = (tx.ownerName || '').trim().toLowerCase();
-      const isMyTx = userIdentifiers.some((id) => txOwner === id || txOwner.includes(id));
+      const isMyTx = userIdentifiers.includes(txOwner);
+      if (!isMyTx) return;
+
       const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 70;
       const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
         ? Number(tx.profitSharing.pemilikBarang) || 0
