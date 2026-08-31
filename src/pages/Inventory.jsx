@@ -119,11 +119,18 @@ export default function Inventory() {
       category: item.kategori,
       ownerName: item.pemilikBarang,
       costPrice: item.hargaModal,
-      sellingPrice: '',
-      paymentMethod: 'Transfer Bank',
+      sellingPrice: item.sellingPrice || '',
+      paymentMethod: item.paymentMethod || 'Transfer Bank',
+      sumberPesanan: item.sumberPesanan || 'WhatsApp',
       status: 'Terjual',
       kodeBarang: item.kodeBarang,
       inventoryItemId: item.id,
+      namaPenerima: item.namaPenerima || '',
+      noHpPenerima: item.noHpPenerima || '',
+      alamatPenerima: item.alamatPenerima || '',
+      ekspedisi: item.ekspedisi || 'J&T Express',
+      resi: item.resi || '',
+      catatanPengiriman: item.catatanPengiriman || '',
     });
     setIsQuickSellOpen(true);
   };
@@ -138,10 +145,19 @@ export default function Inventory() {
       });
 
       if (quickSellData?.inventoryItemId) {
-        await markAsSold(quickSellData.inventoryItemId, newTx?.id || `tx_${Date.now()}`);
+        await markAsSold(quickSellData.inventoryItemId, newTx?.id || `tx_${Date.now()}`, {
+          namaPenerima: salesPayload.namaPenerima || '',
+          noHpPenerima: salesPayload.noHpPenerima || '',
+          alamatPenerima: salesPayload.alamatPenerima || '',
+          sumberPesanan: salesPayload.sumberPesanan || 'WhatsApp',
+          ekspedisi: salesPayload.ekspedisi || 'J&T Express',
+          resi: salesPayload.resi || '',
+          catatanPengiriman: salesPayload.catatanPengiriman || '',
+          sellingPrice: salesPayload.sellingPrice || 0,
+        });
       }
 
-      toast.success(`Barang ${quickSellData?.kodeBarang} berhasil terjual dan masuk ke Data Penjualan!`);
+      toast.success(`Barang ${quickSellData?.kodeBarang} berhasil terjual dan tersinkronisasi!`);
       setIsQuickSellOpen(false);
       setQuickSellData(null);
     } catch (err) {

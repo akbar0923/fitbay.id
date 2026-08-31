@@ -98,9 +98,9 @@ export function InventoryProvider({ children }) {
     }
   }, []);
 
-  const markAsSold = useCallback(async (id, transactionId) => {
+  const markAsSold = useCallback(async (id, transactionId, extraSoldData = {}) => {
     try {
-      await markItemAsSold(id, transactionId);
+      await markItemAsSold(id, transactionId, extraSoldData);
       setItems((prev) =>
         prev.map((item) =>
           item.id === id
@@ -109,6 +109,7 @@ export function InventoryProvider({ children }) {
                 status: 'Terjual',
                 referensiTransaksiId: transactionId || null,
                 tanggalTerjual: new Date().toISOString().split('T')[0],
+                ...extraSoldData,
               }
             : item
         )

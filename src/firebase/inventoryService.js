@@ -311,16 +311,18 @@ export async function updateInventoryItem(id, updateData) {
 }
 
 /**
- * Menandai barang menjadi Terjual dan menyimpan referensi transaksi
+ * Menandai barang menjadi Terjual dan menyimpan referensi transaksi beserta data pengiriman
  * @param {string} id
  * @param {string} transactionId
+ * @param {object} extraData
  * @returns {Promise<void>}
  */
-export async function markItemAsSold(id, transactionId) {
+export async function markItemAsSold(id, transactionId, extraData = {}) {
   await updateInventoryItem(id, {
     status: 'Terjual',
     referensiTransaksiId: transactionId || null,
     tanggalTerjual: new Date().toISOString().split('T')[0],
+    ...extraData,
   });
 }
 
