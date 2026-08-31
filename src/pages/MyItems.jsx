@@ -107,11 +107,10 @@ export default function MyItems() {
 
       const txOwner = (tx.ownerName || '').trim().toLowerCase();
       const isMyTx = userIdentifiers.some((id) => txOwner === id || txOwner.includes(id));
-      if (!isMyTx) return;
-
+      const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 70;
       const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
         ? Number(tx.profitSharing.pemilikBarang) || 0
-        : (Number(tx.profit) * 0.7) || 0;
+        : Math.round(((Number(tx.profit) || 0) * defaultOwnerPct) / 100);
 
       result.push({
         id: `tx_${tx.id}`,

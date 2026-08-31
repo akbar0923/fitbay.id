@@ -73,12 +73,13 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
       if (tx.inventoryItemId && items.some((i) => i.id === tx.inventoryItemId)) return;
       if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
 
-      const txOwner = (tx.ownerName || '').trim().toLowerCase();
-      if (txOwner !== cleanTargetName) return;
+      const defaultOwnerPct = owner?.isCustomScheme && owner?.customScheme
+        ? Number(owner.customScheme.pemilikBarang || 85)
+        : (profitSharingConfig?.pemilikBarang?.percentage || 70);
 
       const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
         ? Number(tx.profitSharing.pemilikBarang) || 0
-        : (Number(tx.profit) * 0.7) || 0;
+        : Math.round(((Number(tx.profit) || 0) * defaultOwnerPct) / 100);
 
       result.push({
         id: `tx_${tx.id}`,
