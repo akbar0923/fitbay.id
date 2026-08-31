@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useSales } from '../context/SalesContext';
+import { useWithdrawals } from '../context/WithdrawalContext';
 import { formatCurrency, formatDate } from '../utils/formatCurrency';
 import EmptyState from '../components/ui/EmptyState';
 import Button from '../components/ui/Button';
@@ -15,6 +16,7 @@ export default function MyItems() {
   const { user } = useAuth();
   const { items, loading: inventoryLoading, updateItem } = useInventory();
   const { transactions, loading: salesLoading, profitSharingConfig, updateTransaction, addTransaction } = useSales();
+  const { getTotalWithdrawnByOwner, getTotalWithdrawn } = useWithdrawals();
 
   const loading = inventoryLoading || salesLoading;
 
@@ -202,6 +204,19 @@ export default function MyItems() {
       readyCapital,
     };
   }, [combinedMyItems]);
+
+  // Total penarikan saldo yang sudah pernah dicairkan atas nama akun ini
+  const totalWithdrawn = useMemo(() => {
+    let sum = 0;
+    userIdentifiers.forEach((id) => {
+      sum += getTotalWithdrawn(id);
+      sum += getTotalWithdrawnByOwner(id);
+    });
+    return sum;
+  }, [userIdentifiers, getTotalWithdrawn, getTotalWithdrawnByOwner]);
+
+  // Sisa saldo bersih yang siap ditarik (setelah dikurangi penarikan)
+  const remainingBalance = Math.max(0, stats.totalEarned - totalWithdrawn);
 
   // Filter dan Pencarian
   const filteredItems = useMemo(() => {
@@ -391,34 +406,35 @@ export default function MyItems() {
             </p>
           </div>
 
-          {/* Terjual */}
+          {/* Terjual & Total Penghasilan */}
           <div className="dark:bg-surface-200 bg-white border border-emerald-500/20 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
             <div>
               <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block mb-2">
-                Barang Terjual
+                Total Hak Penjualan
               </span>
               <p className="text-3xl font-extrabold text-emerald-400 tracking-tight">
-                {stats.soldCount} <span className="text-sm font-normal text-emerald-400/70">item</span>
-              </p>
-            </div>
-            <p className="text-xs text-emerald-400/80 mt-3">
-              Total Hasil: {formatCurrency(stats.totalEarned)}
-            </p>
-          </div>
-
-          {/* Total Hak Bagi Hasil */}
-          <div className="dark:bg-surface-200 bg-white border border-accent/20 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
-            <div>
-              <span className="text-xs font-bold text-accent uppercase tracking-wider block mb-2">
-                Total Hak Penghasilan
-              </span>
-              <p className="text-2xl lg:text-3xl font-extrabold text-accent tracking-tight">
                 {formatCurrency(stats.totalEarned)}
               </p>
             </div>
-            <p className="text-xs dark:text-gray-400 text-gray-500 mt-3">
-              Akumulasi dari seluruh barang terjual
+            <p className="text-xs text-emerald-400/80 mt-3">
+              Dari {stats.soldCount} barang terjual
             </p>
+          </div>
+
+          {/* Sisa Saldo Tersedia (Setelah Ditarik) */}
+          <div className="dark:bg-surface-200 bg-white border border-accent/20 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+            <div>
+              <span className="text-xs font-bold text-accent uppercase tracking-wider block mb-2">
+                Sisa Saldo Siap Ditarik
+              </span>
+              <p className="text-2xl lg:text-3xl font-extrabold text-accent tracking-tight">
+                {formatCurrency(remainingBalance)}
+              </p>
+            </div>
+            <div className="text-xs dark:text-gray-400 text-gray-500 mt-3 flex items-center justify-between">
+              <span>Sudah Dicairkan:</span>
+              <span className="font-semibold text-gray-300">{formatCurrency(totalWithdrawn)}</span>
+            </div>
           </div>
         </div>
       )}
