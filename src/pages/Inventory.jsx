@@ -13,6 +13,7 @@ import { CATEGORIES } from '../constants/profitSharingConfig';
 import InventoryFormModal from '../components/inventory/InventoryFormModal';
 import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
 import DeleteInventoryModal from '../components/inventory/DeleteInventoryModal';
+import BulkChangeOwnerModal from '../components/inventory/BulkChangeOwnerModal';
 import SalesFormModal from '../components/sales/SalesFormModal';
 import BulkActionBar from '../components/common/BulkActionBar';
 import { restoreItemToUnsold } from '../firebase/inventoryService';
@@ -27,6 +28,7 @@ export default function Inventory() {
   // Selection States
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isBulkOwnerModalOpen, setIsBulkOwnerModalOpen] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
   // Filter States
@@ -725,6 +727,14 @@ export default function Inventory() {
         deleteLabel="Hapus Barang Terpilih"
         actions={[
           {
+            label: 'Ubah Pemilik',
+            icon: '👤',
+            variant: 'primary',
+            hidden: !(isAdmin || isSuperAdmin),
+            disabled: bulkActionLoading,
+            onClick: () => setIsBulkOwnerModalOpen(true),
+          },
+          {
             label: 'Ubah ke Terjual',
             icon: '✅',
             variant: 'success',
@@ -741,6 +751,14 @@ export default function Inventory() {
             onClick: () => handleBulkStatusChange('Belum Terjual'),
           },
         ]}
+      />
+
+      {/* Modal Ubah Pemilik Massal */}
+      <BulkChangeOwnerModal
+        isOpen={isBulkOwnerModalOpen}
+        onClose={() => setIsBulkOwnerModalOpen(false)}
+        selectedItems={items.filter((i) => selectedIds.has(i.id))}
+        onSuccess={() => setSelectedIds(new Set())}
       />
 
       {/* Modal Konfirmasi Hapus Massal */}
