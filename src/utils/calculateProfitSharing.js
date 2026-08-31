@@ -1,6 +1,19 @@
 import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
 
 /**
+ * Normalisasi akses nilai profit sharing terhadap perbedaan penamaan kunci lama (alias)
+ */
+function getPsValue(ps, key) {
+  if (!ps) return 0;
+  if (ps[key] !== undefined) return Number(ps[key]) || 0;
+  if (key === 'operasional' && ps.operational !== undefined) return Number(ps.operational) || 0;
+  if (key === 'operational' && ps.operasional !== undefined) return Number(ps.operasional) || 0;
+  if (key === 'nesa' && ps.nessa !== undefined) return Number(ps.nessa) || 0;
+  if (key === 'nessa' && ps.nesa !== undefined) return Number(ps.nesa) || 0;
+  return 0;
+}
+
+/**
  * Menghitung pembagian keuntungan dari satu transaksi
  * @param {number} sellingPrice - Harga jual
  * @param {number} costPrice - Harga modal
@@ -22,7 +35,8 @@ export function calculateProfitSharing(sellingPrice, costPrice, customConfig = P
 
   const sharing = {};
   Object.entries(configToUse).forEach(([key, config]) => {
-    sharing[key] = Math.round((profit * (Number(config.percentage) || 0)) / 100);
+    const pct = typeof config === 'object' ? Number(config.percentage) || 0 : Number(config) || 0;
+    sharing[key] = Math.round((profit * pct) / 100);
   });
 
   return { profit, sharing };
@@ -45,12 +59,13 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
     if (tx.status === 'Terjual') {
       if (tx.profitSharing) {
         Object.keys(configToUse).forEach((key) => {
-          totals[key] += tx.profitSharing[key] || 0;
+          totals[key] += getPsValue(tx.profitSharing, key);
         });
       } else if (tx.profit > 0) {
         // Fallback hitung on the fly jika profitSharing belum tersimpan
         Object.entries(configToUse).forEach(([key, config]) => {
-          totals[key] += Math.round((tx.profit * (Number(config.percentage) || 0)) / 100);
+          const pct = typeof config === 'object' ? Number(config.percentage) || 0 : Number(config) || 0;
+          totals[key] += Math.round((tx.profit * pct) / 100);
         });
       }
     }
