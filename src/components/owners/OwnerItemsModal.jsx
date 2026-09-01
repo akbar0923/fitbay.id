@@ -8,7 +8,7 @@ import { formatCurrency, formatDate } from '../../utils/formatCurrency';
 export default function OwnerItemsModal({ isOpen, onClose, owner }) {
   const { items } = useInventory();
   const { transactions, profitSharingConfig } = useSales();
-  const { getTotalWithdrawnByOwner } = useWithdrawals();
+  const { getTotalWithdrawnByOwner, getTotalWithdrawn } = useWithdrawals();
 
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'Belum Terjual' | 'Terjual'
   const [search, setSearch] = useState('');
@@ -19,6 +19,20 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
   const combinedOwnerItems = useMemo(() => {
     if (!ownerName) return [];
     const cleanTargetName = ownerName.trim().toLowerCase();
+    const isAkbar = cleanTargetName === 'akbar' || cleanTargetName === 'muhbar';
+    const isNesa = cleanTargetName === 'nesa' || cleanTargetName === 'nessa';
+    const isAndin = cleanTargetName === 'andin';
+    const isRitza = cleanTargetName === 'ritza';
+
+    const matchesOwner = (o) => {
+      const clean = (o || '').trim().toLowerCase();
+      if (!clean) return false;
+      if (isAkbar) return clean === 'akbar' || clean === 'muhbar';
+      if (isNesa) return clean === 'nesa' || clean === 'nessa';
+      if (isAndin) return clean === 'andin';
+      if (isRitza) return clean === 'ritza';
+      return clean === cleanTargetName;
+    };
 
     const result = [];
     const processedTxIds = new Set();
@@ -26,8 +40,7 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
 
     // 1. Ambil dari koleksi inventory milik owner ini
     items.forEach((item) => {
-      const oName = (item.pemilikBarang || '').trim().toLowerCase();
-      if (oName !== cleanTargetName) return;
+      if (!matchesOwner(item.pemilikBarang)) return;
 
       const isSold = item.status === 'Terjual';
       let linkedTx = null;
@@ -67,11 +80,14 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
       });
     });
 
-    // 2. Ambil dari transaksi penjualan langsung yang belum ada di inventory
+    // 2. Ambil dari transaksi penjualan langsung yang belum ada di inventory (Hanya milik pemilik ini)
     transactions.forEach((tx) => {
       if (processedTxIds.has(tx.id)) return;
       if (tx.inventoryItemId && items.some((i) => i.id === tx.inventoryItemId)) return;
       if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+
+      const txOwner = tx.ownerName || tx.pemilikBarang || '';
+      if (!matchesOwner(txOwner)) return;
 
       const defaultOwnerPct = owner?.isCustomScheme && owner?.customScheme
         ? Number(owner.customScheme.pemilikBarang || 85)
@@ -98,7 +114,7 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
     });
 
     return result;
-  }, [items, transactions, ownerName]);
+  }, [items, transactions, ownerName, owner, profitSharingConfig]);
 
   // Statistik Keuangan & Jumlah Barang
   const stats = useMemo(() => {
@@ -107,7 +123,19 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
     const soldItems = combinedOwnerItems.filter((i) => i.status === 'Terjual');
 
     const totalEarned = soldItems.reduce((sum, item) => sum + (Number(item.hakPemilik) || 0), 0);
-    const totalWithdrawn = getTotalWithdrawnByOwner(ownerName);
+
+    const clean = (ownerName || '').trim().toLowerCase();
+    let totalWithdrawn = getTotalWithdrawnByOwner(ownerName);
+    if (clean === 'akbar' || clean === 'muhbar') {
+      totalWithdrawn = Math.max(totalWithdrawn, (getTotalWithdrawnByOwner('Akbar') || 0) + (getTotalWithdrawnByOwner('muhbar') || 0) + (getTotalWithdrawn('akbar') || 0));
+    } else if (clean === 'nesa' || clean === 'nessa') {
+      totalWithdrawn = Math.max(totalWithdrawn, (getTotalWithdrawnByOwner('Nessa') || 0) + (getTotalWithdrawnByOwner('Nesa') || 0) + (getTotalWithdrawn('nesa') || 0));
+    } else if (clean === 'andin') {
+      totalWithdrawn = Math.max(totalWithdrawn, (getTotalWithdrawnByOwner('Andin') || 0) + (getTotalWithdrawn('andin') || 0));
+    } else if (clean === 'ritza') {
+      totalWithdrawn = Math.max(totalWithdrawn, (getTotalWithdrawnByOwner('Ritza') || 0) + (getTotalWithdrawn('ritza') || 0));
+    }
+
     const remainingBalance = Math.max(0, totalEarned - totalWithdrawn);
     const readyCapital = readyItems.reduce((sum, i) => sum + (Number(i.hargaModal) || 0), 0);
 
@@ -120,7 +148,7 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
       remainingBalance,
       readyCapital,
     };
-  }, [combinedOwnerItems, getTotalWithdrawnByOwner, ownerName]);
+  }, [combinedOwnerItems, getTotalWithdrawnByOwner, getTotalWithdrawn, ownerName]);
 
   // Filter dan Pencarian
   const filteredItems = useMemo(() => {
