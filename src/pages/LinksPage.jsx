@@ -214,29 +214,6 @@ export default function LinksPage() {
             </svg>
           </a>
 
-          {/* PUBLIC PORTAL: Cek Status Barang Titipan */}
-          <Link
-            to="/cek-barang"
-            className="group flex items-center justify-between p-4 rounded-2xl bg-surface-200/90 hover:bg-surface-200 border border-white/10 hover:border-emerald-500/40 text-gray-200 hover:text-white transition-all duration-300 shadow-md backdrop-blur-md hover:scale-[1.01] active:scale-[0.98]"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 transition-colors text-lg">
-                📦
-              </div>
-              <div className="text-left">
-                <span className="text-sm font-bold block">
-                  Portal Cek Barang & Saldo Titipan
-                </span>
-                <span className="text-[11px] text-gray-400 block">
-                  Khusus penitip barang: pantau status & pencairan
-                </span>
-              </div>
-            </div>
-            <svg className="w-4 h-4 text-gray-400 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-            </svg>
-          </Link>
-
           {/* SOCIAL & CATALOG CHANNELS */}
           {linksConfig.instagramUrl && (
             <a
