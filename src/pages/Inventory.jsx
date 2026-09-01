@@ -202,8 +202,63 @@ export default function Inventory() {
   const handleFormSubmit = async (formData) => {
     if (editingItem) {
       await updateItem(editingItem.id, formData);
+
+      // Jika status barang diubah menjadi 'Terjual' dan belum memiliki referensi transaksi:
+      if (formData.status === 'Terjual' && (!editingItem.referensiTransaksiId || editingItem.status !== 'Terjual')) {
+        try {
+          const sellingPrice = Number(formData.sellingPrice || formData.hargaJual || formData.hargaModal || 0);
+          const newTx = await addTransaction({
+            date: formData.tanggalTerjual || new Date().toISOString().split('T')[0],
+            itemName: formData.namaBarang || editingItem.namaBarang,
+            ownerName: formData.pemilikBarang || editingItem.pemilikBarang || 'Akbar',
+            category: formData.kategori || editingItem.kategori || 'Baju',
+            costPrice: Number(formData.hargaModal || editingItem.hargaModal || 0),
+            sellingPrice: sellingPrice,
+            paymentMethod: formData.paymentMethod || 'Transfer Bank',
+            sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+            status: 'Terjual',
+            kodeBarang: formData.kodeBarang || editingItem.kodeBarang,
+            inventoryItemId: editingItem.id,
+          });
+
+          if (newTx?.id) {
+            await markAsSold(editingItem.id, newTx.id, {
+              sellingPrice: sellingPrice,
+            });
+          }
+        } catch (txErr) {
+          console.error('Error auto-creating transaction from Inventory update:', txErr);
+        }
+      }
     } else {
-      await addItem(formData);
+      const newItem = await addItem(formData);
+      // Jika barang baru langsung diinput dengan status 'Terjual':
+      if (formData.status === 'Terjual' && newItem?.id) {
+        try {
+          const sellingPrice = Number(formData.sellingPrice || formData.hargaJual || formData.hargaModal || 0);
+          const newTx = await addTransaction({
+            date: formData.tanggalTerjual || new Date().toISOString().split('T')[0],
+            itemName: formData.namaBarang,
+            ownerName: formData.pemilikBarang || 'Akbar',
+            category: formData.kategori || 'Baju',
+            costPrice: Number(formData.hargaModal || 0),
+            sellingPrice: sellingPrice,
+            paymentMethod: formData.paymentMethod || 'Transfer Bank',
+            sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+            status: 'Terjual',
+            kodeBarang: formData.kodeBarang,
+            inventoryItemId: newItem.id,
+          });
+
+          if (newTx?.id) {
+            await markAsSold(newItem.id, newTx.id, {
+              sellingPrice: sellingPrice,
+            });
+          }
+        } catch (txErr) {
+          console.error('Error auto-creating transaction from new sold item:', txErr);
+        }
+      }
     }
   };
 

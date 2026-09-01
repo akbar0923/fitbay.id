@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 
 export default function MyItems() {
   const { user } = useAuth();
-  const { items, loading: inventoryLoading, updateItem } = useInventory();
+  const { items, loading: inventoryLoading, updateItem, markAsSold } = useInventory();
   const { transactions, loading: salesLoading, profitSharingConfig, updateTransaction, addTransaction } = useSales();
   const { getTotalWithdrawnByOwner, getTotalWithdrawn } = useWithdrawals();
 
@@ -315,6 +315,31 @@ export default function MyItems() {
     try {
       if (editingInventoryData?.id) {
         await updateItem(editingInventoryData.id, formData);
+
+        // Jika status barang diubah menjadi 'Terjual' dan belum memiliki referensi transaksi:
+        if (formData.status === 'Terjual' && (!editingInventoryData.referensiTransaksiId || editingInventoryData.status !== 'Terjual')) {
+          const sellingPrice = Number(formData.sellingPrice || formData.hargaJual || formData.hargaModal || 0);
+          const newTx = await addTransaction({
+            date: formData.tanggalTerjual || new Date().toISOString().split('T')[0],
+            itemName: formData.namaBarang || editingInventoryData.namaBarang,
+            ownerName: formData.pemilikBarang || editingInventoryData.pemilikBarang || 'Akbar',
+            category: formData.kategori || editingInventoryData.kategori || 'Baju',
+            costPrice: Number(formData.hargaModal || editingInventoryData.hargaModal || 0),
+            sellingPrice: sellingPrice,
+            paymentMethod: formData.paymentMethod || 'Transfer Bank',
+            sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+            status: 'Terjual',
+            kodeBarang: formData.kodeBarang || editingInventoryData.kodeBarang,
+            inventoryItemId: editingInventoryData.id,
+          });
+
+          if (newTx?.id) {
+            await markAsSold(editingInventoryData.id, newTx.id, {
+              sellingPrice: sellingPrice,
+            });
+          }
+        }
+
         toast.success(`Barang [${formData.kodeBarang}] berhasil diperbarui!`);
       }
       setIsEditInventoryOpen(false);
@@ -341,11 +366,26 @@ export default function MyItems() {
   // Submit Handler: Tandai Terjual (Quick Sell)
   const handleQuickSellSubmit = async (formData) => {
     try {
-      await addTransaction(formData);
+      const newTx = await addTransaction({
+        ...formData,
+        kodeBarang: quickSellData?.kodeBarang,
+        inventoryItemId: quickSellData?.inventoryItemId,
+      });
+
+      if (quickSellData?.inventoryItemId) {
+        await markAsSold(quickSellData.inventoryItemId, newTx?.id || `tx_${Date.now()}`, {
+          sellingPrice: Number(formData.sellingPrice || 0),
+          paymentMethod: formData.paymentMethod || 'Transfer Bank',
+          sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+        });
+      }
+
+      toast.success('Barang berhasil terjual dan masuk ke Data Penjualan!');
       setIsQuickSellOpen(false);
       setQuickSellData(null);
     } catch (err) {
       console.error('Error quick sell in MyItems:', err);
+      toast.error('Gagal mencatat penjualan.');
     }
   };
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSales } from '../context/SalesContext';
 import { useAuth } from '../context/AuthContext';
+import { useInventory } from '../context/InventoryContext';
 import SalesTable from '../components/sales/SalesTable';
 import SalesFormModal from '../components/sales/SalesFormModal';
 import DeleteConfirmModal from '../components/sales/DeleteConfirmModal';
@@ -10,6 +11,7 @@ import Button from '../components/ui/Button';
 
 export default function SalesData() {
   const { addTransaction, addTransactionsBatch, updateTransaction, deleteTransaction } = useSales();
+  const { markAsSold, items } = useInventory();
   const { isAdmin } = useAuth();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -39,8 +41,35 @@ export default function SalesData() {
         ...editingTransaction,
         ...formData,
       });
+
+      // Update referensi inventaris jika ada
+      const targetInvId = formData.inventoryItemId || editingTransaction.inventoryItemId;
+      if (targetInvId) {
+        await markAsSold(targetInvId, editingTransaction.id, {
+          sellingPrice: Number(formData.sellingPrice || 0),
+          paymentMethod: formData.paymentMethod || 'Transfer Bank',
+          sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+        });
+      }
     } else {
-      await addTransaction(formData);
+      const newTx = await addTransaction(formData);
+
+      // Cari item inventaris berdasarkan ID atau Kode Barang
+      let targetInvId = formData.inventoryItemId;
+      if (!targetInvId && formData.kodeBarang) {
+        const found = items.find(
+          (i) => (i.kodeBarang || '').toLowerCase() === formData.kodeBarang.trim().toLowerCase()
+        );
+        if (found) targetInvId = found.id;
+      }
+
+      if (targetInvId && newTx?.id) {
+        await markAsSold(targetInvId, newTx.id, {
+          sellingPrice: Number(formData.sellingPrice || 0),
+          paymentMethod: formData.paymentMethod || 'Transfer Bank',
+          sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+        });
+      }
     }
   };
 
