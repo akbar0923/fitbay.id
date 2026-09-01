@@ -10,7 +10,7 @@ export default function LinksPage() {
     storeName: 'Fitbay.id',
     tagline: 'Thrift & Preloved Curated Store ✨',
     description: 'Pilihan baju thrift & preloved berkualitas tinggi. Fast response, aman, dan siap kirim ke seluruh Indonesia.',
-    whatsappNumber: '6281350907489',
+    whatsappNumber: '6285121009699',
     whatsappMessage: 'Halo Admin Fitbay.id! Saya mau tanya seputar produk katalog preloved...',
     whatsappTitipMessage: 'Halo Admin Fitbay.id! Saya ingin titip jual / konsinyasi barang preloved saya...',
     instagramUrl: 'https://instagram.com/fitbay.id',
@@ -60,7 +60,7 @@ export default function LinksPage() {
   };
 
   const getWaLink = (msg) => {
-    const cleanNumber = (linksConfig.whatsappNumber || '6281350907489').replace(/\D/g, '');
+    const cleanNumber = (linksConfig.whatsappNumber || '6285121009699').replace(/\D/g, '');
     const encodedMsg = encodeURIComponent(msg || linksConfig.whatsappMessage);
     return `https://wa.me/${cleanNumber}?text=${encodedMsg}`;
   };
