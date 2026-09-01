@@ -15,14 +15,22 @@
     <link rel="apple-touch-icon" href="/favicon.png" />
     
     <title>Fitbay.id — Finance & Stock Tracker</title>
-    <script>
-      // Otomatis bersihkan tanda pagar (#) jika membuka link lama
-      (function() {
+    <script type="text/javascript">
+      // SPA redirect receiver for GitHub Pages (rafgraph/spa-github-pages)
+      (function(l) {
+        if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
         if (window.location.hash && window.location.hash.startsWith('#/')) {
           var cleanPath = window.location.hash.substring(1);
           window.history.replaceState(null, '', cleanPath);
         }
-      })();
+      }(window.location));
     </script>
   </head>
   <body class="dark:bg-[#0F0F0F] bg-gray-50 text-white">
