@@ -9,6 +9,7 @@ import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import OwnerPortal from './pages/OwnerPortal';
+import LinksPage from './pages/LinksPage';
 import Dashboard from './pages/Dashboard';
 import Inventory from './pages/Inventory';
 import MyItems from './pages/MyItems';
@@ -63,6 +64,13 @@ export default function App() {
           {/* Portal Cek Barang & Saldo Khusus Penitip (Publik) */}
           <Route path="/cek-barang" element={<OwnerPortal />} />
           <Route path="/portal-pemilik" element={<OwnerPortal />} />
+
+          {/* Halaman Linktree & WhatsApp Fitbay.id (Publik untuk Umum / Bio Instagram & TikTok) */}
+          <Route path="/links" element={<LinksPage />} />
+          <Route path="/linktree" element={<LinksPage />} />
+          <Route path="/bio" element={<LinksPage />} />
+          <Route path="/wa" element={<LinksPage />} />
+          <Route path="/whatsapp" element={<LinksPage />} />
 
           {/* Protected App Routes */}
           <Route
