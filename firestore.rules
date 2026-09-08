@@ -76,8 +76,11 @@ service cloud.firestore {
     }
 
     // 6. Pengaturan Sistem & Persentase Bagi Hasil (Settings)
+    // - links_page dapat dibaca publik tanpa login agar halaman Linktree (/links) dapat memuat kustomisasi
+    // - Pengaturan lainnya hanya dapat dibaca oleh pengguna terautentikasi (staf/admin)
+    // - HANYA Admin/Superadmin yang berhak mengubah atau menyimpan pengaturan
     match /settings/{settingId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() || settingId == 'links_page';
       allow write: if isAdmin();
     }
 

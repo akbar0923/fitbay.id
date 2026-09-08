@@ -21,6 +21,7 @@ import Users from './pages/Users';
 import Reports from './pages/Reports';
 import TestimonialsPublic from './pages/TestimonialsPublic';
 import TestimonialsAdmin from './pages/TestimonialsAdmin';
+import LinksManageAdmin from './pages/LinksManageAdmin';
 import PwaInstallPrompt from './components/common/PwaInstallPrompt';
 import { Toaster } from 'react-hot-toast';
 
@@ -119,6 +120,24 @@ export default function App() {
                               element={
                                 <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
                                   <TestimonialsAdmin />
+                                </ProtectedRoute>
+                              }
+                            />
+
+                            {/* Halaman Kelola Linktree & Bio Publik (Super Admin & Admin Operasional) */}
+                            <Route
+                              path="/links-manage"
+                              element={
+                                <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
+                                  <LinksManageAdmin />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/linktree"
+                              element={
+                                <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
+                                  <LinksManageAdmin />
                                 </ProtectedRoute>
                               }
                             />
