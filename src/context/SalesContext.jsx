@@ -15,6 +15,7 @@ import {
   saveProfitSharingSettings,
 } from '../firebase/settingsService';
 import { restoreItemToUnsold, restoreItemsByTransactionRef, markItemAsSold } from '../firebase/inventoryService';
+import { createPlaceholderTestimonial } from '../firebase/testimonialService';
 import toast from 'react-hot-toast';
 
 const SalesContext = createContext();
@@ -231,6 +232,12 @@ export function SalesProvider({ children }) {
       // Simpan ke Firestore (id dihasilkan Firestore)
       const saved = await addTransactionDoc(newTransaction);
       dispatch({ type: ACTIONS.ADD_TRANSACTION, payload: saved });
+
+      // Jika berstatus 'Terjual', otomatis buatkan placeholder testimoni
+      if (saved.status === 'Terjual') {
+        createPlaceholderTestimonial(saved).catch((e) => console.warn('Placeholder auto create error:', e));
+      }
+
       toast.success('Transaksi berhasil ditambahkan!');
       return saved;
     } catch (err) {
@@ -276,6 +283,9 @@ export function SalesProvider({ children }) {
 
         const saved = await addTransactionDoc(newTransaction);
         savedItems.push(saved);
+        if (saved.status === 'Terjual') {
+          createPlaceholderTestimonial(saved).catch(() => {});
+        }
         if (onProgress) onProgress(i + 1, items.length);
       }
 
@@ -368,6 +378,12 @@ export function SalesProvider({ children }) {
       // Update di Firestore
       await updateTransactionDoc(id, updated);
       dispatch({ type: ACTIONS.UPDATE_TRANSACTION, payload: updated });
+
+      // Jika berstatus 'Terjual', otomatis pastikan ada placeholder testimoni
+      if (updated.status === 'Terjual') {
+        createPlaceholderTestimonial(updated).catch((e) => console.warn('Placeholder auto update error:', e));
+      }
+
       toast.success('Transaksi berhasil diperbarui!');
       return updated;
     } catch (err) {

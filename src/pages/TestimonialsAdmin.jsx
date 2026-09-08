@@ -5,23 +5,32 @@ import {
   updateTestimonialStatus,
   updateTestimonialDoc,
   deleteTestimonialDoc,
+  syncPlaceholderTestimonialsFromSales,
 } from '../firebase/testimonialService';
+import { useSales } from '../context/SalesContext';
+import RequestTestimonialModal from '../components/sales/RequestTestimonialModal';
 import toast from 'react-hot-toast';
 
 export default function TestimonialsAdmin() {
+  const { transactions, updateTransaction } = useSales();
   const [testimonials, setTestimonials] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   // Filters
-  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'menunggu' | 'disetujui' | 'ditolak'
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'menunggu_diisi' | 'menunggu' | 'disetujui' | 'ditolak'
   const [searchTerm, setSearchTerm] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'manual' | 'publik'
+  const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'manual' | 'publik' | 'transaksi'
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
+
+  // Minta Testimoni Modal via WA / Link
+  const [selectedTxForModal, setSelectedTxForModal] = useState(null);
+  const [isTestimonialModalOpen, setIsTestimonialModalOpen] = useState(false);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState({
@@ -81,11 +90,35 @@ export default function TestimonialsAdmin() {
   // Counts
   const counts = useMemo(() => {
     const total = testimonials.length;
+    const menungguDiisi = testimonials.filter((t) => t.status === 'menunggu_diisi').length;
     const menunggu = testimonials.filter((t) => t.status === 'menunggu').length;
     const disetujui = testimonials.filter((t) => t.status === 'disetujui').length;
     const ditolak = testimonials.filter((t) => t.status === 'ditolak').length;
-    return { total, menunggu, disetujui, ditolak };
+    return { total, menungguDiisi, menunggu, disetujui, ditolak };
   }, [testimonials]);
+
+  // Sinkronkan transaksi lama berstatus 'Terjual' yang belum ada di testimoni
+  const handleSyncTransactions = async () => {
+    if (!transactions || transactions.length === 0) {
+      toast.error('Belum ada data transaksi yang termuat.');
+      return;
+    }
+    setSyncing(true);
+    try {
+      const count = await syncPlaceholderTestimonialsFromSales(transactions);
+      if (count > 0) {
+        toast.success(`Berhasil menyinkronkan ${count} transaksi terjual ke daftar pengingat testimoni!`);
+        setActiveTab('menunggu_diisi');
+      } else {
+        toast.success('Semua transaksi terjual sudah memiliki data pengingat testimoni.');
+      }
+    } catch (e) {
+      console.error('Error syncing sold transactions:', e);
+      toast.error('Gagal menyinkronkan transaksi.');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Image Upload helper (Canvas compressed)
   const handleImageUpload = (e) => {
@@ -149,15 +182,18 @@ export default function TestimonialsAdmin() {
   // Open Edit Modal
   const handleOpenEdit = (item) => {
     setEditingItem(item);
+    const defaultRating = item.rating > 0 ? item.rating : 5;
+    const defaultStatus = item.status === 'menunggu_diisi' ? 'disetujui' : (item.status || 'disetujui');
+
     setFormData({
       namaPembeli: item.namaPembeli || '',
-      rating: item.rating || 5,
+      rating: defaultRating,
       namaBarang: item.namaBarang || '',
       isiTestimoni: item.isiTestimoni || '',
       fotoUrl: item.fotoUrl || '',
       tanggal: item.tanggal || new Date().toISOString().split('T')[0],
-      status: item.status || 'disetujui',
-      sumber: item.sumber || 'manual',
+      status: defaultStatus,
+      sumber: item.sumber === 'transaksi' ? 'transaksi' : (item.sumber || 'manual'),
       catatanInternal: item.catatanInternal || '',
     });
   };
@@ -195,6 +231,14 @@ export default function TestimonialsAdmin() {
     try {
       if (editingItem) {
         await updateTestimonialDoc(editingItem.id, formData);
+
+        // Jika dokumen ini terhubung dengan transaksi, tandai transaksi sudah diisi
+        if (editingItem.referensiTransaksiId && updateTransaction) {
+          updateTransaction(editingItem.referensiTransaksiId, {
+            statusTestimoni: 'sudah_diisi',
+          }).catch((e) => console.warn('Update status transaksi gagal:', e));
+        }
+
         toast.success('Testimoni berhasil diperbarui');
         setEditingItem(null);
       } else {
@@ -255,12 +299,22 @@ export default function TestimonialsAdmin() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleSyncTransactions}
+            disabled={syncing}
+            className="px-3.5 py-2 rounded-xl border dark:border-white/10 border-gray-300 dark:bg-white/5 bg-gray-100 hover:bg-gray-200 dark:hover:bg-white/10 dark:text-gray-300 text-gray-700 text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            title="Pindai dan buat pengingat ulasan untuk transaksi berstatus Terjual"
+          >
+            <span>{syncing ? '⏳' : '🔄'}</span>
+            <span>{syncing ? 'Menyinkronkan...' : 'Sinkronkan Transaksi Terjual'}</span>
+          </button>
+
           <a
             href="/testimoni"
             target="_blank"
             rel="noreferrer"
-            className="px-4 py-2.5 rounded-xl border dark:border-white/10 border-gray-300 dark:bg-white/5 bg-gray-100 hover:bg-gray-200 dark:hover:bg-white/10 dark:text-gray-300 text-gray-700 text-xs sm:text-sm font-medium transition-colors flex items-center gap-2"
+            className="px-3.5 py-2 rounded-xl border dark:border-white/10 border-gray-300 dark:bg-white/5 bg-gray-100 hover:bg-gray-200 dark:hover:bg-white/10 dark:text-gray-300 text-gray-700 text-xs font-semibold transition-colors flex items-center gap-1.5"
           >
             <span>Buka Halaman Publik</span>
             <span>↗</span>
@@ -268,16 +322,16 @@ export default function TestimonialsAdmin() {
 
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-1.5"
           >
-            <span className="text-base leading-none">+</span>
+            <span className="text-sm leading-none">+</span>
             <span>Tambah Testimoni Manual</span>
           </button>
         </div>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <div
           onClick={() => setActiveTab('all')}
           className={`cursor-pointer p-4 rounded-2xl border transition-all ${
@@ -288,7 +342,25 @@ export default function TestimonialsAdmin() {
         >
           <div className="text-xs dark:text-gray-400 text-gray-500">Semua Testimoni</div>
           <div className="text-2xl font-bold dark:text-white text-gray-900 mt-1">{counts.total}</div>
-          <div className="text-[11px] text-gray-400 mt-0.5">Total keseluruhan ulasan</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">Total ulasan & transaksi</div>
+        </div>
+
+        <div
+          onClick={() => setActiveTab('menunggu_diisi')}
+          className={`cursor-pointer p-4 rounded-2xl border transition-all ${
+            activeTab === 'menunggu_diisi'
+              ? 'dark:bg-blue-500/10 bg-blue-50 border-blue-500 shadow-md'
+              : 'dark:bg-surface-300/40 bg-white border-gray-200 dark:border-white/5 hover:border-blue-500/40'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-blue-400 font-semibold">Menunggu Diisi</span>
+            {counts.menungguDiisi > 0 && (
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            )}
+          </div>
+          <div className="text-2xl font-bold text-blue-400 mt-1">{counts.menungguDiisi}</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">Transaksi belum ada ulasan</div>
         </div>
 
         <div
@@ -306,7 +378,7 @@ export default function TestimonialsAdmin() {
             )}
           </div>
           <div className="text-2xl font-bold text-amber-400 mt-1">{counts.menunggu}</div>
-          <div className="text-[11px] text-gray-400 mt-0.5">Menunggu review admin</div>
+          <div className="text-[11px] text-gray-400 mt-0.5">Ulasan masuk dari web</div>
         </div>
 
         <div
@@ -349,6 +421,21 @@ export default function TestimonialsAdmin() {
             }`}
           >
             Semua ({counts.total})
+          </button>
+          <button
+            onClick={() => setActiveTab('menunggu_diisi')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              activeTab === 'menunggu_diisi'
+                ? 'bg-blue-500 text-white'
+                : 'dark:bg-white/5 bg-gray-100 dark:text-blue-400 text-blue-600 hover:text-blue-300'
+            }`}
+          >
+            <span>Menunggu Diisi</span>
+            {counts.menungguDiisi > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-blue-500 text-white text-[10px] font-bold">
+                {counts.menungguDiisi}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('menunggu')}
@@ -395,6 +482,7 @@ export default function TestimonialsAdmin() {
             className="text-xs dark:bg-white/5 bg-gray-100 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 dark:text-gray-300 text-gray-700 focus:outline-none focus:border-emerald-500"
           >
             <option value="all">Semua Sumber</option>
+            <option value="transaksi">Transaksi Terjual</option>
             <option value="manual">Manual Admin</option>
             <option value="publik">Form Web Publik</option>
           </select>
@@ -447,6 +535,7 @@ export default function TestimonialsAdmin() {
         ) : (
           <div className="divide-y divide-gray-100 dark:divide-white/5">
             {filteredTestimonials.map((item) => {
+              const isMenungguDiisi = item.status === 'menunggu_diisi';
               const isMenunggu = item.status === 'menunggu';
               const isDisetujui = item.status === 'disetujui';
               const isDitolak = item.status === 'ditolak';
@@ -455,7 +544,9 @@ export default function TestimonialsAdmin() {
                 <div
                   key={item.id}
                   className={`p-4 sm:p-5 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
-                    isMenunggu
+                    isMenungguDiisi
+                      ? 'dark:bg-blue-500/[0.03] bg-blue-50/40'
+                      : isMenunggu
                       ? 'dark:bg-amber-500/[0.04] bg-amber-50/50'
                       : 'hover:bg-gray-50/50 dark:hover:bg-white/[0.02]'
                   }`}
@@ -467,21 +558,23 @@ export default function TestimonialsAdmin() {
                         {item.namaPembeli}
                       </h3>
 
-                      {renderStars(item.rating)}
+                      {!isMenungguDiisi && renderStars(item.rating)}
 
                       <span className="text-[11px] text-gray-400">
-                        • {item.tanggal || item.createdAt?.slice(0, 10)}
+                        • {item.tanggalTransaksi || item.tanggal || item.createdAt?.slice(0, 10)}
                       </span>
 
                       {/* Sumber Badge */}
                       <span
                         className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                          item.sumber === 'publik'
+                          item.sumber === 'transaksi'
+                            ? 'bg-teal-500/10 text-teal-400 border-teal-500/20'
+                            : item.sumber === 'publik'
                             ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
                             : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                         }`}
                       >
-                        {item.sumber === 'publik' ? 'Form Web' : 'Manual Admin'}
+                        {item.sumber === 'transaksi' ? 'Transaksi Terjual' : item.sumber === 'publik' ? 'Form Web' : 'Manual Admin'}
                       </span>
 
                       {/* Status Badge */}
@@ -491,10 +584,12 @@ export default function TestimonialsAdmin() {
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                             : isDitolak
                             ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                            : isMenungguDiisi
+                            ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
                             : 'bg-amber-400/20 text-amber-400 border-amber-400/40 animate-pulse'
                         }`}
                       >
-                        {item.status}
+                        {isMenungguDiisi ? 'Menunggu Diisi' : item.status}
                       </span>
                     </div>
 
@@ -507,9 +602,20 @@ export default function TestimonialsAdmin() {
                     )}
 
                     {/* Isi Ulasan */}
-                    <p className="text-xs sm:text-sm dark:text-gray-300 text-gray-700 leading-relaxed italic whitespace-pre-line">
-                      "{item.isiTestimoni}"
-                    </p>
+                    {item.isiTestimoni ? (
+                      <p className="text-xs sm:text-sm dark:text-gray-300 text-gray-700 leading-relaxed italic whitespace-pre-line">
+                        "{item.isiTestimoni}"
+                      </p>
+                    ) : (
+                      <div className="p-2.5 rounded-xl dark:bg-blue-500/5 bg-blue-50/50 border dark:border-blue-500/15 border-blue-200/50 text-xs text-blue-400 space-y-1">
+                        <div className="font-semibold flex items-center gap-1">
+                          <span>⏳ Belum Ada Ulasan Pembeli</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 leading-relaxed">
+                          Transaksi ini berstatus Terjual. Anda dapat mengirimkan link Minta Testimoni via WhatsApp, atau klik "Lengkapi Ulasan" jika pembeli sudah mengirim testimoni via chat WA / Instagram.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Catatan Internal Admin jika ada */}
                     {item.catatanInternal && (
@@ -543,69 +649,114 @@ export default function TestimonialsAdmin() {
                       </button>
                     )}
 
-                    {/* Quick Approve / Reject Buttons */}
-                    {isMenunggu && (
-                      <>
+                    {/* Aksi khusus jika Menunggu Diisi */}
+                    {isMenungguDiisi ? (
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <button
-                          onClick={() => handleStatusChange(item.id, 'disetujui')}
-                          className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1"
-                          title="Setujui dan tampilkan ke web publik"
+                          onClick={() => {
+                            setSelectedTxForModal({
+                              id: item.referensiTransaksiId || item.id,
+                              namaPenerima: item.namaPembeli,
+                              itemName: item.namaBarang,
+                              noHpPenerima: item.noHp,
+                              kodeTestimoni: item.kodeTestimoni,
+                              statusTestimoni: 'belum_diminta',
+                            });
+                            setIsTestimonialModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] border border-[#25D366]/40 text-xs font-bold rounded-xl transition-all flex items-center gap-1"
+                          title="Minta testimoni pembeli via link WhatsApp / salin"
                         >
-                          <span>✓</span>
-                          <span>Setujui</span>
+                          <span>💬</span>
+                          <span>Minta Testimoni</span>
                         </button>
+
                         <button
-                          onClick={() => handleStatusChange(item.id, 'ditolak')}
-                          className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 text-xs font-bold rounded-xl transition-all"
-                          title="Tolak ulasan ini"
+                          onClick={() => handleOpenEdit(item)}
+                          className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-xs font-bold rounded-xl transition-all flex items-center gap-1"
+                          title="Lengkapi ulasan asli dari pembeli (WA/Instagram)"
                         >
-                          <span>✕</span>
-                          <span>Tolak</span>
+                          <span>✍️</span>
+                          <span>Lengkapi Ulasan</span>
+                        </button>
+
+                        <button
+                          onClick={() => setDeleteConfirmItem(item)}
+                          className="p-2 text-gray-400 hover:text-red-400 text-xs rounded-xl transition-colors hover:bg-red-500/10"
+                          title="Abaikan pengingat ini"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Quick Approve / Reject Buttons */}
+                        {isMenunggu && (
+                          <>
+                            <button
+                              onClick={() => handleStatusChange(item.id, 'disetujui')}
+                              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition-all shadow-md flex items-center gap-1"
+                              title="Setujui dan tampilkan ke web publik"
+                            >
+                              <span>✓</span>
+                              <span>Setujui</span>
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(item.id, 'ditolak')}
+                              className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 text-xs font-bold rounded-xl transition-all"
+                              title="Tolak ulasan ini"
+                            >
+                              <span>✕</span>
+                              <span>Tolak</span>
+                            </button>
+                          </>
+                        )}
+
+                        {isDisetujui && (
+                          <button
+                            onClick={() => handleStatusChange(item.id, 'ditolak')}
+                            className="px-2.5 py-1.5 dark:bg-white/5 bg-gray-100 hover:bg-red-500/10 hover:text-red-400 text-gray-400 text-xs font-medium rounded-xl transition-colors border border-transparent hover:border-red-500/20"
+                            title="Tarik / Batalkan publikasi"
+                          >
+                            Sembunyikan
+                          </button>
+                        )}
+
+                        {isDitolak && (
+                          <button
+                            onClick={() => handleStatusChange(item.id, 'disetujui')}
+                            className="px-2.5 py-1.5 dark:bg-white/5 bg-gray-100 hover:bg-emerald-500/10 hover:text-emerald-400 text-gray-400 text-xs font-medium rounded-xl transition-colors border border-transparent hover:border-emerald-500/20"
+                            title="Setujui dan tayangkan ulasan ini"
+                          >
+                            Setujui Ulang
+                          </button>
+                        )}
+
+                        {/* Edit Button */}
+                        <button
+                          onClick={() => handleOpenEdit(item)}
+                          className="p-2 rounded-xl dark:bg-white/5 bg-gray-100 hover:bg-emerald-500/10 hover:text-emerald-400 dark:text-gray-300 text-gray-700 transition-colors"
+                          title="Edit ulasan"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => setDeleteConfirmItem(item)}
+                          className="p-2 rounded-xl dark:bg-white/5 bg-gray-100 hover:bg-red-500/10 hover:text-red-400 dark:text-gray-300 text-gray-700 transition-colors"
+                          title="Hapus permanen"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </>
                     )}
-
-                    {isDisetujui && (
-                      <button
-                        onClick={() => handleStatusChange(item.id, 'ditolak')}
-                        className="px-2.5 py-1.5 dark:bg-white/5 bg-gray-100 hover:bg-red-500/10 hover:text-red-400 text-gray-400 text-xs font-medium rounded-xl transition-colors border border-transparent hover:border-red-500/20"
-                        title="Tarik / Batalkan publikasi"
-                      >
-                        Sembunyikan
-                      </button>
-                    )}
-
-                    {isDitolak && (
-                      <button
-                        onClick={() => handleStatusChange(item.id, 'disetujui')}
-                        className="px-2.5 py-1.5 dark:bg-white/5 bg-gray-100 hover:bg-emerald-500/10 hover:text-emerald-400 text-gray-400 text-xs font-medium rounded-xl transition-colors border border-transparent hover:border-emerald-500/20"
-                        title="Setujui dan tayangkan ulasan ini"
-                      >
-                        Setujui Ulang
-                      </button>
-                    )}
-
-                    {/* Edit Button */}
-                    <button
-                      onClick={() => handleOpenEdit(item)}
-                      className="p-2 rounded-xl dark:bg-white/5 bg-gray-100 hover:bg-emerald-500/10 hover:text-emerald-400 dark:text-gray-300 text-gray-700 transition-colors"
-                      title="Edit ulasan"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-
-                    {/* Delete Button */}
-                    <button
-                      onClick={() => setDeleteConfirmItem(item)}
-                      className="p-2 rounded-xl dark:bg-white/5 bg-gray-100 hover:bg-red-500/10 hover:text-red-400 dark:text-gray-300 text-gray-700 transition-colors"
-                      title="Hapus permanen"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
                   </div>
                 </div>
               );
@@ -875,6 +1026,18 @@ export default function TestimonialsAdmin() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Minta Testimoni Pembeli */}
+      {selectedTxForModal && (
+        <RequestTestimonialModal
+          isOpen={isTestimonialModalOpen}
+          onClose={() => {
+            setIsTestimonialModalOpen(false);
+            setSelectedTxForModal(null);
+          }}
+          transaction={selectedTxForModal}
+        />
       )}
     </div>
   );

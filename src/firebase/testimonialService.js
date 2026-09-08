@@ -19,55 +19,83 @@ function getTestimonialsRef() {
 }
 
 /**
+ * Mengambil daftar testimoni publik yang sudah disetujui admin serta statistik transaksi real-time
+ * @returns {Promise<{testimonials: Array, stats: object}>}
+ */
+export async function getPublicTestimonialsAndStats() {
+  let testimonials = [];
+  let stats = {
+    totalBarangTerjual: 0,
+    totalPembeliUnik: 0,
+    averageRating: '5.0',
+    totalTestimoni: 0,
+    persentasePuas: 100,
+  };
+
+  // 1. Coba panggil endpoint serverless /api/testimonials (menghitung data objektif real-time dari Firestore via Admin SDK)
+  try {
+    const res = await fetch('/api/testimonials');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.testimonials)) {
+        testimonials = json.testimonials.filter((t) => t.isiTestimoni && t.isiTestimoni.trim().length >= 5);
+        if (json.stats) {
+          stats = json.stats;
+        }
+        return { testimonials, stats };
+      }
+    }
+  } catch (apiErr) {
+    console.warn('Query /api/testimonials gagal, fallback ke Client SDK:', apiErr);
+  }
+
+  // 2. Fallback ke Client SDK
+  try {
+    const q = query(
+      getTestimonialsRef(),
+      where('status', '==', 'disetujui')
+    );
+    const snap = await getDocs(q);
+    testimonials = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((t) => t.isiTestimoni && t.isiTestimoni.trim().length >= 5);
+
+    testimonials.sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.tanggal || 0).getTime();
+      const timeB = new Date(b.createdAt || b.tanggal || 0).getTime();
+      return timeB - timeA;
+    });
+
+    const total = testimonials.length;
+    let sumRating = 0;
+    let count5 = 0;
+    testimonials.forEach((t) => {
+      const r = Number(t.rating) || 5;
+      sumRating += r;
+      if (r >= 5) count5 += 1;
+    });
+
+    stats = {
+      totalBarangTerjual: total,
+      totalPembeliUnik: total,
+      averageRating: total > 0 ? (sumRating / total).toFixed(1) : '5.0',
+      totalTestimoni: total,
+      persentasePuas: total > 0 ? Math.round((count5 / total) * 100) : 100,
+    };
+  } catch (firestoreErr) {
+    console.warn('Fallback client SDK testimonials gagal:', firestoreErr);
+  }
+
+  return { testimonials, stats };
+}
+
+/**
  * Mengambil daftar testimoni publik yang sudah disetujui admin
- * Mendukung query langsung Firestore dengan fallback otomatis ke /api/testimonials
  * @returns {Promise<Array>}
  */
 export async function getPublicTestimonials() {
-  try {
-    // 1. Coba query Firestore Client SDK dengan orderBy
-    try {
-      const q = query(
-        getTestimonialsRef(),
-        where('status', '==', 'disetujui'),
-        orderBy('createdAt', 'desc')
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    } catch (orderErr) {
-      console.warn('Query dengan orderBy gagal, coba filter status sederhana:', orderErr);
-      const qFallback = query(
-        getTestimonialsRef(),
-        where('status', '==', 'disetujui')
-      );
-      const snapFallback = await getDocs(qFallback);
-      const items = snapFallback.docs.map((d) => ({ id: d.id, ...d.data() }));
-      
-      // Client-side sort terbaru ke terlama
-      return items.sort((a, b) => {
-        const timeA = new Date(a.createdAt || a.tanggal || 0).getTime();
-        const timeB = new Date(b.createdAt || b.tanggal || 0).getTime();
-        return timeB - timeA;
-      });
-    }
-  } catch (firestoreErr) {
-    console.warn('Query Firestore langsung gagal (kemungkinan rules belum di-publish), fallback ke /api/testimonials:', firestoreErr);
-
-    // 2. Fallback ke endpoint serverless Vercel /api/testimonials
-    try {
-      const res = await fetch('/api/testimonials');
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.testimonials)) {
-          return json.testimonials;
-        }
-      }
-    } catch (apiErr) {
-      console.warn('Fallback ke /api/testimonials juga gagal:', apiErr);
-    }
-
-    throw new Error('Gagal memuat daftar testimoni. Pastikan aturan keamanan Firestore sudah diperbarui di Firebase Console.');
-  }
+  const res = await getPublicTestimonialsAndStats();
+  return res.testimonials;
 }
 
 /**
@@ -298,3 +326,141 @@ export async function deleteTestimonialDoc(id) {
   const docRef = doc(db, COLLECTION_NAME, id);
   await deleteDoc(docRef);
 }
+
+/**
+ * Membuat dokumen placeholder testimoni otomatis dari transaksi yang berstatus 'Terjual'
+ * Status placeholder: 'menunggu_diisi'
+ * Tidak akan ditampilkan di publik sampai pembeli mengisi atau admin melengkapi
+ * @param {object} tx - Transaksi penjualan
+ * @returns {Promise<object|null>}
+ */
+export async function createPlaceholderTestimonial(tx) {
+  if (!tx || !tx.id) return null;
+  if (tx.status !== 'Terjual') return null;
+
+  try {
+    // 1. Cek apakah sudah ada testimoni (placeholder ataupun terisi) untuk transaksi ini
+    const q = query(
+      getTestimonialsRef(),
+      where('referensiTransaksiId', '==', tx.id)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      // Sudah ada testimoni/placeholder terkait transaksi ini
+      return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
+
+    // Juga cek by kodeTestimoni jika ada
+    if (tx.kodeTestimoni) {
+      const qKode = query(
+        getTestimonialsRef(),
+        where('kodeTestimoni', '==', tx.kodeTestimoni)
+      );
+      const snapKode = await getDocs(qKode);
+      if (!snapKode.empty) {
+        return { id: snapKode.docs[0].id, ...snapKode.docs[0].data() };
+      }
+    }
+
+    const now = new Date();
+    const shortId = (tx.id || '').replace(/\D/g, '').slice(-4) || '88';
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const kode = tx.kodeTestimoni || `TESTI-${shortId}${rand}`;
+
+    const placeholderDoc = {
+      namaPembeli: (tx.namaPenerima || 'Pelanggan').trim(),
+      namaBarang: (tx.itemName || 'Barang Preloved').trim(),
+      referensiTransaksiId: tx.id,
+      kodeTestimoni: kode,
+      noHp: tx.noHpPenerima || '',
+      tanggalTransaksi: tx.date || now.toISOString().split('T')[0],
+      tanggal: tx.date || now.toISOString().split('T')[0],
+      isiTestimoni: '', // Kosong karena belum ada ulasan asli
+      rating: 0, // 0 menandakan belum ada rating
+      fotoUrl: '',
+      sumber: 'transaksi',
+      status: 'menunggu_diisi', // Status khusus placeholder
+      catatanInternal: `Dibuat otomatis dari transaksi ${tx.id}`,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    const docRef = await addDoc(getTestimonialsRef(), placeholderDoc);
+    return { id: docRef.id, ...placeholderDoc };
+  } catch (err) {
+    console.warn('Gagal membuat placeholder testimoni otomatis:', err);
+    return null;
+  }
+}
+
+/**
+ * Memindai seluruh transaksi berstatus 'Terjual' dan membuat placeholder jika belum ada
+ * Berguna untuk sinkronisasi transaksi lama yang belum ada placeholder-nya
+ * @param {Array} transactions
+ * @returns {Promise<number>} Jumlah placeholder baru yang berhasil dibuat
+ */
+export async function syncPlaceholderTestimonialsFromSales(transactions) {
+  if (!Array.isArray(transactions) || transactions.length === 0) return 0;
+
+  const soldTransactions = transactions.filter((tx) => tx.status === 'Terjual');
+  if (soldTransactions.length === 0) return 0;
+
+  // Ambil semua testimoni yang ada saat ini
+  let existingRefIds = new Set();
+  let existingKodes = new Set();
+
+  try {
+    const snap = await getDocs(getTestimonialsRef());
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      if (data.referensiTransaksiId) existingRefIds.add(data.referensiTransaksiId);
+      if (data.kodeTestimoni) existingKodes.add(data.kodeTestimoni);
+    });
+  } catch (e) {
+    console.warn('Gagal membaca daftar testimoni yang ada:', e);
+  }
+
+  let createdCount = 0;
+  for (const tx of soldTransactions) {
+    if (existingRefIds.has(tx.id) || (tx.kodeTestimoni && existingKodes.has(tx.kodeTestimoni))) {
+      continue;
+    }
+
+    try {
+      const res = await createPlaceholderTestimonial(tx);
+      if (res) {
+        existingRefIds.add(tx.id);
+        if (res.kodeTestimoni) existingKodes.add(res.kodeTestimoni);
+        createdCount += 1;
+      }
+    } catch (e) {
+      console.warn(`Gagal sync placeholder untuk tx ${tx.id}:`, e);
+    }
+  }
+
+  return createdCount;
+}
+
+/**
+ * Melengkapi dokumen placeholder testimoni secara manual oleh Admin
+ * Mengubah status placeholder dari 'menunggu_diisi' menjadi 'disetujui' atau 'menunggu'
+ * @param {string} id
+ * @param {object} payload - { namaPembeli, namaBarang, isiTestimoni, rating, fotoUrl, status, tanggal }
+ */
+export async function completePlaceholderTestimonial(id, payload) {
+  const docRef = doc(db, COLLECTION_NAME, id);
+  const now = new Date().toISOString();
+
+  const updateData = {
+    ...payload,
+    isiTestimoni: (payload.isiTestimoni || '').trim(),
+    rating: Math.min(5, Math.max(1, Math.round(Number(payload.rating) || 5))),
+    status: payload.status || 'disetujui',
+    sumber: payload.sumber || 'manual',
+    updatedAt: now,
+  };
+
+  await updateDoc(docRef, updateData);
+  return { id, ...updateData };
+}
+

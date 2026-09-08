@@ -107,10 +107,11 @@ service cloud.firestore {
           request.resource.data.rating <= 5 &&
           (!('referensiTransaksiId' in request.resource.data) || (request.resource.data.referensiTransaksiId is string && request.resource.data.referensiTransaksiId.size() <= 100))
         ) ||
-        (isAuthenticated() && isAdmin())
+        isAuthenticated()
       );
 
-      allow update, delete: if isAuthenticated() && isAdmin();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     // Blokir total akses untuk koleksi lainnya

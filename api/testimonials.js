@@ -164,10 +164,10 @@ export default async function handler(req, res) {
         .where('status', '==', 'disetujui')
         .get();
 
-      const items = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
+      // Hanya tampilkan ulasan yang benar-benar ada teks ulasannya
+      const items = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        .filter((t) => t.isiTestimoni && t.isiTestimoni.trim().length >= 5);
 
       // Urutkan terbaru ke terlama
       items.sort((a, b) => {
@@ -176,9 +176,50 @@ export default async function handler(req, res) {
         return timeB - timeA;
       });
 
+      // Hitung statistik objektif dari data transaksi 'Terjual' secara real-time
+      let totalBarangTerjual = 0;
+      const pembeliUnikSet = new Set();
+
+      try {
+        const soldTxs = await db.collection('transactions').where('status', '==', 'Terjual').get();
+        soldTxs.forEach((docSnap) => {
+          const tx = docSnap.data();
+          if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+            totalBarangTerjual += tx.items.length;
+          } else {
+            totalBarangTerjual += 1;
+          }
+          const buyerKey = (tx.noHpPenerima || tx.namaPenerima || '').trim().toLowerCase();
+          if (buyerKey && buyerKey.length >= 3) {
+            pembeliUnikSet.add(buyerKey);
+          }
+        });
+      } catch (txErr) {
+        console.warn('Gagal menghitung statistik transaksi:', txErr);
+      }
+
+      const totalTestimoni = items.length;
+      let totalRating = 0;
+      let count5Star = 0;
+      items.forEach((t) => {
+        const r = Number(t.rating) || 5;
+        totalRating += r;
+        if (r >= 5) count5Star += 1;
+      });
+
+      const avgRating = totalTestimoni > 0 ? (totalRating / totalTestimoni).toFixed(1) : '5.0';
+      const persentasePuas = totalTestimoni > 0 ? Math.round((count5Star / totalTestimoni) * 100) : 100;
+
       return res.status(200).json({
         success: true,
         testimonials: items,
+        stats: {
+          totalBarangTerjual,
+          totalPembeliUnik: pembeliUnikSet.size,
+          averageRating: avgRating,
+          totalTestimoni,
+          persentasePuas,
+        },
       });
     } catch (err) {
       console.error('Error fetching testimonials via Admin SDK:', err);
@@ -213,6 +254,40 @@ export default async function handler(req, res) {
 
       const now = new Date();
       const dateStr = now.toISOString().split('T')[0];
+      const db = getAdminDb();
+
+      // Cek apakah ada placeholder berstatus 'menunggu_diisi' untuk transaksi ini
+      let docRefId = null;
+      let isUpdatedPlaceholder = false;
+
+      if (referensiTransaksiId) {
+        try {
+          // Cari placeholder berdasarkan referensiTransaksiId atau kodeTestimoni
+          const pSnap = await db
+            .collection('testimonials')
+            .where('referensiTransaksiId', '==', referensiTransaksiId)
+            .where('status', '==', 'menunggu_diisi')
+            .limit(1)
+            .get();
+
+          if (!pSnap.empty) {
+            const placeholderDoc = pSnap.docs[0];
+            docRefId = placeholderDoc.id;
+            await placeholderDoc.ref.update({
+              namaPembeli: nama,
+              isiTestimoni: isi,
+              rating: rating,
+              tanggal: dateStr,
+              sumber: 'publik',
+              status: 'menunggu',
+              updatedAt: now.toISOString(),
+            });
+            isUpdatedPlaceholder = true;
+          }
+        } catch (pErr) {
+          console.warn('Gagal mencari/mengupdate placeholder testimonial:', pErr);
+        }
+      }
 
       const newDoc = {
         namaPembeli: nama,
@@ -227,8 +302,14 @@ export default async function handler(req, res) {
         newDoc.referensiTransaksiId = referensiTransaksiId;
       }
 
-      const db = getAdminDb();
-      const docRef = await db.collection('testimonials').add(newDoc);
+      if (!isUpdatedPlaceholder) {
+        const docRef = await db.collection('testimonials').add({
+          ...newDoc,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        });
+        docRefId = docRef.id;
+      }
 
       // Jika ada keterkaitan transaksi, update statusTestimoni transaksi menjadi 'sudah_diisi'
       if (referensiTransaksiId) {
@@ -262,9 +343,9 @@ export default async function handler(req, res) {
 
       return res.status(201).json({
         success: true,
-        id: docRef.id,
+        id: docRefId,
         message: 'Testimoni berhasil dikirim dan menunggu persetujuan admin.',
-        data: { id: docRef.id, ...newDoc },
+        data: { id: docRefId, ...newDoc },
       });
     } catch (err) {
       console.error('Error saving testimonial via Admin SDK:', err);
