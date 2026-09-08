@@ -89,7 +89,7 @@ export default function Withdrawals() {
 
       const defaultOwnerPct = customScheme?.pemilikBarang !== undefined
         ? Number(customScheme.pemilikBarang)
-        : (profitSharingConfig?.pemilikBarang?.percentage || 70);
+        : (teamKey ? 85 : (profitSharingConfig?.pemilikBarang?.percentage || 70));
 
       const ownerShare = psPemilikBarang !== undefined
         ? Number(psPemilikBarang)
@@ -183,6 +183,9 @@ export default function Withdrawals() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isOwnerDetailOpen, setIsOwnerDetailOpen] = useState(false);
+  const [isTeamDetailOpen, setIsTeamDetailOpen] = useState(false);
+  const [teamDetailKey, setTeamDetailKey] = useState(null);
+  const [teamDetailTab, setTeamDetailTab] = useState('items'); // 'items' | 'commissions' | 'withdrawals'
   const [editingItem, setEditingItem] = useState(null);
   const [deletingItem, setDeletingItem] = useState(null);
 
@@ -574,6 +577,126 @@ export default function Withdrawals() {
     });
   }, [externalOwnerBalances, ownerTabFilter, ownerSearch]);
 
+  // Rincian Lengkap Hak & Penarikan untuk Anggota Tim Terpilih
+  const selectedTeamDetails = useMemo(() => {
+    if (!teamDetailKey) return null;
+    const normalizedKey = getTeamMemberKey(teamDetailKey) || teamDetailKey;
+    const rec = recipientOptions.find((r) => r.key === teamDetailKey || r.key === normalizedKey);
+    const label = rec?.label || teamDetailKey;
+
+    // 1. Barang Pribadi
+    const personalItems = [];
+    transactions.forEach((tx) => {
+      if (tx.status !== 'Terjual') return;
+      if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        tx.items.forEach((it, idx) => {
+          const owner = it.ownerName || tx.ownerName || '';
+          if (getTeamMemberKey(owner) === normalizedKey) {
+            const sell = Number(it.sellingPrice || 0);
+            const profit = Number(it.profit !== undefined ? it.profit : sell);
+            const custom = it.skemaCustom || tx.skemaCustom;
+            const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
+            const hak = it.profitSharing?.pemilikBarang !== undefined
+              ? Number(it.profitSharing.pemilikBarang)
+              : Math.round((profit * pct) / 100);
+
+            personalItems.push({
+              id: it.id || `${tx.id}_${idx}`,
+              txId: tx.id,
+              date: it.sourceTxDate || tx.date,
+              itemName: it.itemName || 'Barang Terjual',
+              kodeBarang: it.kodeBarang || tx.kodeBarang || '-',
+              sellingPrice: sell,
+              hakPemilik: hak,
+              percentage: pct,
+              isMerged: tx.items.length > 1,
+              buyerName: tx.namaPenerima || tx.buyerName || '-',
+            });
+          }
+        });
+      } else {
+        const owner = tx.ownerName || tx.owner || '';
+        if (getTeamMemberKey(owner) === normalizedKey) {
+          const sell = Number(tx.sellingPrice || 0);
+          const profit = Number(tx.profit !== undefined ? tx.profit : sell);
+          const custom = tx.skemaCustom || tx.ownerCustomScheme;
+          const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
+          const hak = tx.profitSharing?.pemilikBarang !== undefined
+            ? Number(tx.profitSharing.pemilikBarang)
+            : Math.round((profit * pct) / 100);
+
+          personalItems.push({
+            id: tx.id,
+            txId: tx.id,
+            date: tx.date,
+            itemName: tx.itemName || 'Barang Terjual',
+            kodeBarang: tx.kodeBarang || '-',
+            sellingPrice: sell,
+            hakPemilik: hak,
+            percentage: pct,
+            isMerged: false,
+            buyerName: tx.namaPenerima || tx.buyerName || '-',
+          });
+        }
+      }
+    });
+
+    personalItems.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const totalPersonalGoods = personalItems.reduce((sum, i) => sum + i.hakPemilik, 0);
+
+    // 2. Komisi Tim (5%) dari Penitip Luar
+    const commissionsList = [];
+    transactions.forEach((tx) => {
+      if (tx.status !== 'Terjual') return;
+      const comm = Number(tx.profitSharing?.[normalizedKey] || tx.profitSharing?.[teamDetailKey] || 0);
+      if (comm > 0) {
+        commissionsList.push({
+          id: tx.id,
+          date: tx.date,
+          itemName: tx.itemName || (tx.items?.map((i) => i.itemName).join(', ') || 'Barang Titipan'),
+          ownerName: tx.ownerName || 'Penitip Luar',
+          sellingPrice: Number(tx.sellingPrice || 0),
+          commission: comm,
+          buyerName: tx.namaPenerima || tx.buyerName || '-',
+        });
+      }
+    });
+    commissionsList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const totalCommission = commissionsList.reduce((sum, c) => sum + c.commission, 0);
+
+    // 3. Riwayat Penarikan
+    const teamWithdrawals = withdrawals.filter((w) => {
+      const wKey = (w.recipientKey || '').toLowerCase().trim();
+      const wOwner = (w.ownerName || '').toLowerCase().trim();
+      const wRec = (w.recipientName || '').toLowerCase().trim();
+      return (
+        wKey === normalizedKey ||
+        wKey === teamDetailKey ||
+        wKey === `owner_${normalizedKey}` ||
+        wOwner === normalizedKey ||
+        wRec.includes(normalizedKey)
+      );
+    });
+    teamWithdrawals.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const totalWithdrawn = teamWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+
+    const totalEarned = totalPersonalGoods + totalCommission;
+    const remaining = Math.max(0, totalEarned - totalWithdrawn);
+
+    return {
+      key: teamDetailKey,
+      label,
+      personalItems,
+      totalPersonalGoods,
+      commissionsList,
+      totalCommission,
+      teamWithdrawals,
+      totalWithdrawn,
+      totalEarned,
+      remaining,
+    };
+  }, [teamDetailKey, transactions, withdrawals, recipientOptions]);
+
   // Export Riwayat ke Excel
   const exportToExcel = () => {
     const rows = filteredWithdrawals.map((w) => ({
@@ -698,7 +821,7 @@ export default function Withdrawals() {
             Status Saldo Penerima Bagi Hasil
           </h2>
           <span className="text-xs dark:text-gray-500 text-gray-400">
-            Hak Tim = Komisi 5% + Keuntungan Barang Pribadi (70%)
+            Hak Tim = Komisi 5% + Keuntungan Barang Pribadi (85%)
           </span>
         </div>
 
@@ -859,14 +982,33 @@ export default function Withdrawals() {
                       </button>
                     </>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenAddTeam(rec.key)}
-                      className="w-full py-2 px-3 rounded-xl text-xs font-semibold dark:bg-white/5 bg-gray-100 dark:hover:bg-accent/15 hover:bg-accent/10 dark:text-gray-300 text-gray-700 hover:text-accent dark:hover:text-accent transition-all flex items-center justify-center gap-1.5"
-                    >
-                      <span>💸</span>
-                      <span>Tarik Saldo {rec.label.split(' ')[0]}</span>
-                    </button>
+                    <>
+                      {isTeamMember && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTeamDetailKey(rec.key);
+                            setTeamDetailTab('items');
+                            setIsTeamDetailOpen(true);
+                          }}
+                          className="w-full py-1.5 px-3 rounded-xl text-xs font-bold bg-accent/15 hover:bg-accent/25 text-accent transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                          </svg>
+                          <span>Lihat Rincian & Riwayat ({teamPersonalGoods[rec.key]?.totalItems || 0} pcs)</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenAddTeam(rec.key)}
+                        className="w-full py-2 px-3 rounded-xl text-xs font-semibold dark:bg-white/5 bg-gray-100 dark:hover:bg-accent/15 hover:bg-accent/10 dark:text-gray-300 text-gray-700 hover:text-accent dark:hover:text-accent transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <span>💸</span>
+                        <span>Tarik Saldo {rec.label.split(' ')[0]}</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -1287,6 +1429,320 @@ export default function Withdrawals() {
       </Modal>
 
       {/* ========================================== */}
+      {/* MODAL RINCIAN HAK & PENARIKAN ANGGOTA TIM */}
+      {/* ========================================== */}
+      <Modal
+        isOpen={isTeamDetailOpen}
+        onClose={() => setIsTeamDetailOpen(false)}
+        title={`Rincian Hak & Riwayat: ${selectedTeamDetails?.label || ''}`}
+        size="xl"
+      >
+        {selectedTeamDetails && (
+          <div className="space-y-4">
+            {/* Top Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-xl dark:bg-surface-300 bg-gray-50 border dark:border-white/5 border-gray-200">
+                <p className="text-[10px] uppercase font-semibold dark:text-gray-400 text-gray-500">Total Hak Didapat</p>
+                <p className="text-lg font-bold text-accent mt-0.5">
+                  {formatCurrency(selectedTeamDetails.totalEarned)}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Barang: {formatCurrency(selectedTeamDetails.totalPersonalGoods)} + Komisi: {formatCurrency(selectedTeamDetails.totalCommission)}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl dark:bg-surface-300 bg-gray-50 border dark:border-white/5 border-gray-200">
+                <p className="text-[10px] uppercase font-semibold dark:text-gray-400 text-gray-500">Total Sudah Ditarik</p>
+                <p className="text-lg font-bold text-purple mt-0.5">
+                  {formatCurrency(selectedTeamDetails.totalWithdrawn)}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {selectedTeamDetails.teamWithdrawals.length} kali penarikan dicatat
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-xl dark:bg-emerald-500/10 bg-emerald-50 border dark:border-emerald-500/20 border-emerald-200">
+                <p className="text-[10px] uppercase font-semibold text-emerald-500">Sisa Saldo Tersedia</p>
+                <p className="text-xl font-extrabold text-emerald-400 mt-0.5">
+                  {formatCurrency(selectedTeamDetails.remaining)}
+                </p>
+                <p className="text-[10px] text-emerald-400/80 mt-1">
+                  {selectedTeamDetails.remaining > 0 ? 'Siap dicairkan / ditransfer' : 'Saldo telah lunas ditarik'}
+                </p>
+              </div>
+            </div>
+
+            {/* Tab Switcher */}
+            <div className="flex items-center gap-1.5 border-b dark:border-white/10 border-gray-200 pb-2 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setTeamDetailTab('items')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                  teamDetailTab === 'items'
+                    ? 'bg-accent text-dark-800 shadow-sm'
+                    : 'dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-600 hover:bg-accent/15'
+                }`}
+              >
+                <span>📦</span>
+                <span>Barang Pribadi ({selectedTeamDetails.personalItems.length} pcs)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTeamDetailTab('commissions')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                  teamDetailTab === 'commissions'
+                    ? 'bg-accent text-dark-800 shadow-sm'
+                    : 'dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-600 hover:bg-accent/15'
+                }`}
+              >
+                <span>👥</span>
+                <span>Komisi Tim 5% ({selectedTeamDetails.commissionsList.length} tx)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTeamDetailTab('withdrawals')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                  teamDetailTab === 'withdrawals'
+                    ? 'bg-purple text-white shadow-sm'
+                    : 'dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-600 hover:bg-purple/15'
+                }`}
+              >
+                <span>💸</span>
+                <span>Riwayat Penarikan ({selectedTeamDetails.teamWithdrawals.length} kali)</span>
+              </button>
+            </div>
+
+            {/* TAB 1: BARANG PRIBADI */}
+            {teamDetailTab === 'items' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs dark:text-gray-400 text-gray-500">
+                  <span>Daftar barang pribadi {selectedTeamDetails.label} yang sudah berstatus <strong>Terjual</strong>:</span>
+                  <span className="font-semibold text-accent">Total Hak: {formatCurrency(selectedTeamDetails.totalPersonalGoods)}</span>
+                </div>
+                <div className="max-h-80 overflow-y-auto rounded-xl border dark:border-white/5 border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 dark:bg-surface-300 bg-gray-100 border-b dark:border-white/5 border-gray-200 z-10">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Tanggal</th>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Nama Barang & Kode</th>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Pembeli</th>
+                        <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Harga Jual</th>
+                        <th className="px-3 py-2.5 text-center font-semibold dark:text-gray-400 text-gray-600">Skema</th>
+                        <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Hak Pemilik</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-white/5 divide-gray-100">
+                      {selectedTeamDetails.personalItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
+                            Belum ada barang pribadi terjual.
+                          </td>
+                        </tr>
+                      ) : (
+                        selectedTeamDetails.personalItems.map((item) => (
+                          <tr key={item.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-2.5 whitespace-nowrap dark:text-gray-300 text-gray-700">
+                              {formatDate(item.date)}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="font-semibold dark:text-white text-gray-900">{item.itemName}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 font-mono">
+                                  {item.kodeBarang}
+                                </span>
+                                {item.isMerged && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300">
+                                    Gabungan
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap dark:text-gray-400 text-gray-500">
+                              {item.buyerName}
+                            </td>
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap dark:text-gray-300 text-gray-700">
+                              {formatCurrency(item.sellingPrice)}
+                            </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-500/15 text-emerald-400">
+                                {item.percentage}%
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-bold text-accent whitespace-nowrap">
+                              {formatCurrency(item.hakPemilik)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: KOMISI TIM (5%) */}
+            {teamDetailTab === 'commissions' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs dark:text-gray-400 text-gray-500">
+                  <span>Komisi 5% yang didapat dari penjualan penitip luar (non-tim):</span>
+                  <span className="font-semibold text-accent">Total Komisi: {formatCurrency(selectedTeamDetails.totalCommission)}</span>
+                </div>
+                <div className="max-h-80 overflow-y-auto rounded-xl border dark:border-white/5 border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 dark:bg-surface-300 bg-gray-100 border-b dark:border-white/5 border-gray-200 z-10">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Tanggal</th>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Barang & Pemilik Asli</th>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Pembeli</th>
+                        <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Harga Jual</th>
+                        <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Komisi Tim (5%)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-white/5 divide-gray-100">
+                      {selectedTeamDetails.commissionsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-8 text-center text-gray-400">
+                            Belum ada komisi tim tercatat.
+                          </td>
+                        </tr>
+                      ) : (
+                        selectedTeamDetails.commissionsList.map((comm) => (
+                          <tr key={comm.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-2.5 whitespace-nowrap dark:text-gray-300 text-gray-700">
+                              {formatDate(comm.date)}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="font-semibold dark:text-white text-gray-900">{comm.itemName}</div>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400">
+                                Titipan: {comm.ownerName}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 whitespace-nowrap dark:text-gray-400 text-gray-500">
+                              {comm.buyerName}
+                            </td>
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap dark:text-gray-300 text-gray-700">
+                              {formatCurrency(comm.sellingPrice)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-bold text-emerald-400 whitespace-nowrap">
+                              +{formatCurrency(comm.commission)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: RIWAYAT PENARIKAN */}
+            {teamDetailTab === 'withdrawals' && (
+              <div className="space-y-2">
+                <div className="p-3 rounded-xl dark:bg-amber-500/10 bg-amber-50 border dark:border-amber-500/20 border-amber-200 text-xs dark:text-amber-300 text-amber-800 flex items-start gap-2">
+                  <span className="text-base leading-none">💡</span>
+                  <div>
+                    <strong>Penting:</strong> Sisa Saldo Tersedia ({formatCurrency(selectedTeamDetails.remaining)}) dihitung dari Total Hak ({formatCurrency(selectedTeamDetails.totalEarned)}) dikurangi Total Penarikan di bawah ini. Jika ada penarikan uji coba lama yang keliru dicatat, Anda dapat menghapusnya di bawah agar saldo kembali utuh.
+                  </div>
+                </div>
+
+                <div className="max-h-80 overflow-y-auto rounded-xl border dark:border-white/5 border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 dark:bg-surface-300 bg-gray-100 border-b dark:border-white/5 border-gray-200 z-10">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Tanggal</th>
+                        <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Nominal Ditarik</th>
+                        <th className="px-3 py-2.5 text-right font-semibold dark:text-gray-400 text-gray-600">Total Ditransfer</th>
+                        <th className="px-3 py-2.5 text-left font-semibold dark:text-gray-400 text-gray-600">Catatan / Rekening</th>
+                        <th className="px-3 py-2.5 text-center font-semibold dark:text-gray-400 text-gray-600">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-white/5 divide-gray-100">
+                      {selectedTeamDetails.teamWithdrawals.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-3 py-8 text-center text-gray-400">
+                            Belum pernah ada riwayat penarikan dicatat.
+                          </td>
+                        </tr>
+                      ) : (
+                        selectedTeamDetails.teamWithdrawals.map((w) => (
+                          <tr key={w.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-2.5 whitespace-nowrap dark:text-gray-300 text-gray-700">
+                              {formatDate(w.date)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-bold text-accent whitespace-nowrap">
+                              {formatCurrency(w.amount)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-extrabold text-purple whitespace-nowrap">
+                              {formatCurrency(w.totalTransferred || w.amount)}
+                            </td>
+                            <td className="px-3 py-2.5 dark:text-gray-400 text-gray-500 max-w-xs truncate">
+                              {w.notes || '-'}
+                            </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsTeamDetailOpen(false);
+                                    handleOpenEdit(w);
+                                  }}
+                                  className="p-1 rounded dark:text-gray-400 text-gray-500 hover:text-blue-400"
+                                  title="Edit"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsTeamDetailOpen(false);
+                                    setDeletingItem(w);
+                                    setIsDeleteOpen(true);
+                                  }}
+                                  className="p-1 rounded dark:text-gray-400 text-gray-500 hover:text-red-400"
+                                  title="Hapus"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t dark:border-white/5 border-gray-200">
+              <span className="text-xs text-gray-400">
+                Fitbay.id — Sistem Keuangan & Bagi Hasil
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" type="button" onClick={() => setIsTeamDetailOpen(false)}>
+                  Tutup
+                </Button>
+                {selectedTeamDetails.remaining > 0 && (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setIsTeamDetailOpen(false);
+                      handleOpenAddTeam(selectedTeamDetails.key);
+                    }}
+                  >
+                    💸 Tarik Saldo Sekarang
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ========================================== */}
       {/* MODAL FORM CATAT / EDIT PENARIKAN SALDO   */}
       {/* ========================================== */}
       <Modal
@@ -1404,7 +1860,7 @@ export default function Withdrawals() {
                   <span className="font-semibold">{formatCurrency(currentRecipientDetails.commission)}</span>
                 </div>
                 <div>
-                  <span className="text-gray-400">Barang Pribadi (70%): </span>
+                  <span className="text-gray-400">Barang Pribadi (85%): </span>
                   <span className="font-semibold text-accent">{formatCurrency(currentRecipientDetails.personalGoods)}</span>
                 </div>
               </div>
