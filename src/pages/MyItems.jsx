@@ -83,8 +83,8 @@ export default function MyItems() {
     if (userIdentifiers.length === 0) return [];
 
     const result = [];
-    const processedTxIds = new Set();
     const processedCodes = new Set();
+    const processedInventoryItemIds = new Set();
 
     // 1. Ambil dari koleksi inventory milik user ini (Pencocokan Persis / Exact Match)
     items.forEach((item) => {
@@ -94,6 +94,8 @@ export default function MyItems() {
 
       const isSold = item.status === 'Terjual';
       let linkedTx = null;
+      let matchedItemInTx = null;
+
       if (isSold) {
         if (item.referensiTransaksiId) {
           linkedTx = transactions.find((t) => t.id === item.referensiTransaksiId);
@@ -101,18 +103,48 @@ export default function MyItems() {
         if (!linkedTx && item.kodeBarang) {
           linkedTx = transactions.find((t) => t.kodeBarang === item.kodeBarang);
         }
+        if (linkedTx && Array.isArray(linkedTx.items) && linkedTx.items.length > 0) {
+          // Prioritaskan pencocokan via inventoryItemId atau kodeBarang
+          matchedItemInTx = linkedTx.items.find(
+            (it) =>
+              (it.inventoryItemId && item.id && it.inventoryItemId === item.id) ||
+              (it.kodeBarang && item.kodeBarang && it.kodeBarang.toLowerCase() === item.kodeBarang.toLowerCase())
+          );
+          // Fallback pencocokan via nama
+          if (!matchedItemInTx) {
+            matchedItemInTx = linkedTx.items.find(
+              (it) =>
+                (it.itemName && it.itemName.trim().toLowerCase() === (item.namaBarang || '').trim().toLowerCase()) ||
+                (it.name && it.name.trim().toLowerCase() === (item.namaBarang || '').trim().toLowerCase())
+            );
+          }
+        }
       }
 
-      if (linkedTx) {
-        processedTxIds.add(linkedTx.id);
-      }
       if (item.kodeBarang) {
         processedCodes.add(item.kodeBarang.toLowerCase());
       }
+      if (item.id) {
+        processedInventoryItemIds.add(item.id);
+      }
 
-      const hakPemilik = linkedTx?.profitSharing?.pemilikBarang !== undefined
-        ? Number(linkedTx.profitSharing.pemilikBarang) || 0
-        : Number(item.hargaModal) || 0;
+      const itemSellingPrice = matchedItemInTx?.sellingPrice !== undefined
+        ? Number(matchedItemInTx.sellingPrice)
+        : (linkedTx && (!linkedTx.items || linkedTx.items.length <= 1))
+        ? Number(linkedTx.sellingPrice)
+        : (Number(item.hargaJual) || Number(item.sellingPrice) || 0);
+
+      let hakPemilik = 0;
+      if (matchedItemInTx?.profitSharing?.pemilikBarang !== undefined) {
+        hakPemilik = Number(matchedItemInTx.profitSharing.pemilikBarang) || 0;
+      } else if (linkedTx && (!linkedTx.items || linkedTx.items.length <= 1) && linkedTx.profitSharing?.pemilikBarang !== undefined) {
+        hakPemilik = Number(linkedTx.profitSharing.pemilikBarang) || 0;
+      } else if (isSold && itemSellingPrice > 0) {
+        const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 85;
+        hakPemilik = Math.round((itemSellingPrice * defaultOwnerPct) / 100);
+      } else {
+        hakPemilik = Number(item.hargaModal) || 0;
+      }
 
       result.push({
         id: item.id,
@@ -124,7 +156,7 @@ export default function MyItems() {
         tanggalMasuk: item.tanggalMasuk || item.createdAt || '-',
         tanggalTerjual: item.tanggalTerjual || linkedTx?.date || null,
         hargaModal: Number(item.hargaModal) || 0,
-        sellingPrice: linkedTx?.sellingPrice || item.hargaJual || 0,
+        sellingPrice: itemSellingPrice,
         hakPemilik: hakPemilik,
         source: 'inventory',
         rawItem: item,
@@ -134,56 +166,119 @@ export default function MyItems() {
 
     // 2. Ambil dari koleksi transactions langsung (yang belum terhubung ke inventory)
     transactions.forEach((tx) => {
-      if (processedTxIds.has(tx.id)) return;
-      if (tx.inventoryItemId && items.some((i) => i.id === tx.inventoryItemId)) return;
-      if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+      if (tx.status !== 'Terjual') return;
 
-      const txOwner = (tx.ownerName || '').trim().toLowerCase();
-      const isMyTx = userIdentifiers.includes(txOwner);
-      if (!isMyTx) return;
+      if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        // Multi-item transaction: bongkar per item
+        tx.items.forEach((it, idx) => {
+          if (it.kodeBarang && processedCodes.has(it.kodeBarang.toLowerCase())) return;
+          if (it.inventoryItemId && processedInventoryItemIds.has(it.inventoryItemId)) return;
 
-      const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 70;
-      const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
-        ? Number(tx.profitSharing.pemilikBarang) || 0
-        : Math.round(((Number(tx.profit) || 0) * defaultOwnerPct) / 100);
+          const itOwner = (it.ownerName || tx.ownerName || '').trim().toLowerCase();
+          const isMyItem = userIdentifiers.some((id) => itOwner.includes(id));
+          if (!isMyItem) return;
 
-      result.push({
-        id: `tx_${tx.id}`,
-        kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
-        namaBarang: tx.itemName || 'Barang Terjual',
-        kategori: tx.category || 'Baju',
-        catatan: tx.notes || 'Penjualan Langsung',
-        status: 'Terjual',
-        tanggalMasuk: tx.date || '-',
-        tanggalTerjual: tx.date || '-',
-        hargaModal: 0,
-        sellingPrice: Number(tx.sellingPrice) || 0,
-        hakPemilik: hakPemilik,
-        source: 'transaction',
-        rawItem: {
+          if (it.kodeBarang) processedCodes.add(it.kodeBarang.toLowerCase());
+          if (it.inventoryItemId) processedInventoryItemIds.add(it.inventoryItemId);
+
+          const itSelling = Number(it.sellingPrice) || 0;
+          const itHak = it.profitSharing?.pemilikBarang !== undefined
+            ? Number(it.profitSharing.pemilikBarang)
+            : Math.round(itSelling * 0.85);
+
+          result.push({
+            id: `tx_${tx.id}_item_${idx}`,
+            kodeBarang: it.kodeBarang || 'TX-LANGSUNG',
+            namaBarang: it.itemName || it.name || 'Barang Terjual',
+            kategori: it.category || tx.category || 'Baju',
+            catatan: tx.notes || 'Penjualan Langsung',
+            status: 'Terjual',
+            tanggalMasuk: it.sourceTxDate || tx.date || '-',
+            tanggalTerjual: tx.date || '-',
+            hargaModal: Number(it.costPrice) || 0,
+            sellingPrice: itSelling,
+            hakPemilik: itHak,
+            source: 'transaction',
+            rawItem: {
+              id: `tx_${tx.id}_item_${idx}`,
+              kodeBarang: it.kodeBarang || 'TX-LANGSUNG',
+              namaBarang: it.itemName || it.name,
+              kategori: it.category || tx.category,
+              pemilikBarang: it.ownerName || tx.ownerName,
+              status: 'Terjual',
+              hargaModal: Number(it.costPrice) || 0,
+              hargaJual: itSelling,
+              sellingPrice: itSelling,
+              profit: Number(it.profit) || itSelling,
+              namaPenerima: tx.namaPenerima,
+              noHpPenerima: tx.noHpPenerima,
+              alamatPenerima: tx.alamatPenerima,
+              sumberPesanan: tx.sumberPesanan,
+              ekspedisi: tx.ekspedisi,
+              resi: tx.resi,
+              tanggalMasuk: tx.date,
+              tanggalTerjual: tx.date,
+              referensiTransaksiId: tx.id,
+              catatan: tx.notes,
+            },
+            linkedTx: tx,
+          });
+        });
+      } else {
+        // Single-item direct transaction
+        if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+        if (tx.inventoryItemId && processedInventoryItemIds.has(tx.inventoryItemId)) return;
+
+        const txOwner = (tx.ownerName || '').trim().toLowerCase();
+        const isMyTx = userIdentifiers.some((id) => txOwner.includes(id));
+        if (!isMyTx) return;
+
+        if (tx.kodeBarang) processedCodes.add(tx.kodeBarang.toLowerCase());
+        if (tx.inventoryItemId) processedInventoryItemIds.add(tx.inventoryItemId);
+
+        const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 85;
+        const hakPemilik = tx.profitSharing?.pemilikBarang !== undefined
+          ? Number(tx.profitSharing.pemilikBarang) || 0
+          : Math.round(((Number(tx.profit) || Number(tx.sellingPrice) || 0) * defaultOwnerPct) / 100);
+
+        result.push({
           id: `tx_${tx.id}`,
           kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
-          namaBarang: tx.itemName,
-          kategori: tx.category,
-          pemilikBarang: tx.ownerName,
+          namaBarang: tx.itemName || 'Barang Terjual',
+          kategori: tx.category || 'Baju',
+          catatan: tx.notes || 'Penjualan Langsung',
           status: 'Terjual',
-          hargaModal: Number(tx.costPrice) || 0,
-          hargaJual: Number(tx.sellingPrice) || 0,
+          tanggalMasuk: tx.date || '-',
+          tanggalTerjual: tx.date || '-',
+          hargaModal: 0,
           sellingPrice: Number(tx.sellingPrice) || 0,
-          profit: Number(tx.profit) || 0,
-          namaPenerima: tx.namaPenerima,
-          noHpPenerima: tx.noHpPenerima,
-          alamatPenerima: tx.alamatPenerima,
-          sumberPesanan: tx.sumberPesanan,
-          ekspedisi: tx.ekspedisi,
-          resi: tx.resi,
-          tanggalMasuk: tx.date,
-          tanggalTerjual: tx.date,
-          referensiTransaksiId: tx.id,
-          catatan: tx.notes,
-        },
-        linkedTx: tx,
-      });
+          hakPemilik: hakPemilik,
+          source: 'transaction',
+          rawItem: {
+            id: `tx_${tx.id}`,
+            kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
+            namaBarang: tx.itemName,
+            kategori: tx.category,
+            pemilikBarang: tx.ownerName,
+            status: 'Terjual',
+            hargaModal: Number(tx.costPrice) || 0,
+            hargaJual: Number(tx.sellingPrice) || 0,
+            sellingPrice: Number(tx.sellingPrice) || 0,
+            profit: Number(tx.profit) || 0,
+            namaPenerima: tx.namaPenerima,
+            noHpPenerima: tx.noHpPenerima,
+            alamatPenerima: tx.alamatPenerima,
+            sumberPesanan: tx.sumberPesanan,
+            ekspedisi: tx.ekspedisi,
+            resi: tx.resi,
+            tanggalMasuk: tx.date,
+            tanggalTerjual: tx.date,
+            referensiTransaksiId: tx.id,
+            catatan: tx.notes,
+          },
+          linkedTx: tx,
+        });
+      }
     });
 
     return result;
