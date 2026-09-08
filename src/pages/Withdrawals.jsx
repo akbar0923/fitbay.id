@@ -774,10 +774,10 @@ export default function Withdrawals() {
                         </div>
                         <p className="text-[11px] font-medium" style={{ color: rec.color }}>
                           {isOwnerCard
-                            ? '70% dari keuntungan barang titipan luar'
+                            ? 'Bagi hasil keuntungan barang titipan luar'
                             : isTeamMember
-                            ? `5% Komisi Tim ${personalGoodsEarned > 0 ? '+ Keuntungan Barang Pribadi' : ''}`
-                            : '10% dari keuntungan toko'}
+                            ? `Komisi Tim 5% ${personalGoodsEarned > 0 ? '+ Keuntungan Barang Pribadi' : ''}`
+                            : 'Bagi hasil operasional toko'}
                         </p>
                       </div>
                     </div>
@@ -811,7 +811,7 @@ export default function Withdrawals() {
                       </div>
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="dark:text-gray-400 text-gray-600 flex items-center gap-1">
-                          <span>📦</span> Barang Pribadi (70%):
+                          <span>📦</span> Barang Pribadi:
                         </span>
                         <span className="font-semibold text-accent">
                           {formatCurrency(personalGoodsEarned)}
