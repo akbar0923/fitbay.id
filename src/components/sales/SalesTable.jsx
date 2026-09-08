@@ -24,7 +24,7 @@ import BulkActionBar from '../common/BulkActionBar';
 import toast from 'react-hot-toast';
 
 export default function SalesTable({ onEdit, onDelete, onAdd }) {
-  const { transactions, loading, deleteTransaction } = useSales();
+  const { transactions, loading, deleteTransaction, unmergeTransaction } = useSales();
   const { isAdmin, isSuperAdmin } = useAuth();
   const { owners } = useOwners();
 
@@ -35,6 +35,8 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [expandedTxId, setExpandedTxId] = useState(null);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [unmergingTx, setUnmergingTx] = useState(null);
+  const [unmergingLoading, setUnmergingLoading] = useState(false);
 
   // Deteksi transaksi dengan pelanggan yang sama (nama atau nomor HP)
   const sameCustomerTransactions = useMemo(() => {
@@ -88,6 +90,19 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const handleOpenShippingModal = (tx) => {
     setSelectedShippingTx(tx);
     setIsShippingModalOpen(true);
+  };
+
+  const handleConfirmUnmerge = async () => {
+    if (!unmergingTx) return;
+    setUnmergingLoading(true);
+    try {
+      await unmergeTransaction(unmergingTx.id);
+      setUnmergingTx(null);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setUnmergingLoading(false);
+    }
   };
 
   const handleToggleSelectAll = () => {
@@ -767,11 +782,26 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                           <tr key={`${tx.id}_expanded`} className="dark:bg-purple-500/5 bg-purple-50/70 border-b dark:border-white/5 border-purple-100 animate-fade-in">
                             <td colSpan={13} className="px-6 py-3">
                               <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
-                                    <span>📦</span>
-                                    <span>Rincian {tx.items.length} Barang dalam Paket Transaksi Ini:</span>
-                                  </p>
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                                      <span>📦</span>
+                                      <span>Rincian {tx.items.length} Barang dalam Paket Transaksi Ini:</span>
+                                    </p>
+                                    {isAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setUnmergingTx(tx);
+                                        }}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors flex items-center gap-1"
+                                        title="Pisahkan kembali paket transaksi ini menjadi beberapa transaksi mandiri per barang"
+                                      >
+                                        <span>✂️ Pisahkan Transaksi (Unmerge)</span>
+                                      </button>
+                                    )}
+                                  </div>
                                   <span className="text-[11px] dark:text-gray-400 text-gray-500">
                                     Tujuan: <strong>{tx.namaPenerima || 'Pelanggan'}</strong> {tx.alamatPenerima ? `(${tx.alamatPenerima})` : ''}
                                   </span>
@@ -798,7 +828,16 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                                       </div>
                                       <div className="text-right shrink-0">
                                         <p className="font-bold text-accent">{formatCurrency(it.sellingPrice)}</p>
-                                        <p className="text-[10px] text-gray-400">Modal: {formatCurrency(it.costPrice)}</p>
+                                        {it.profitSharing?.pemilikBarang !== undefined && (
+                                          <p className="text-[10px] text-emerald-400 font-semibold" title="Hak Bersih Pemilik Barang">
+                                            Hak: {formatCurrency(it.profitSharing.pemilikBarang)}
+                                          </p>
+                                        )}
+                                        {it.profitSharing?.operational !== undefined && (
+                                          <p className="text-[9px] text-purple-300 font-medium" title="Kas Operasional">
+                                            Ops: {formatCurrency(it.profitSharing.operational)}
+                                          </p>
+                                        )}
                                       </div>
                                     </div>
                                   ))}
@@ -1218,6 +1257,43 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                   loading={bulkActionLoading}
                 >
                   Ya, Hapus {selectedIds.size} Transaksi
+                </Button>
+              </div>
+            </div>
+          </Modal>
+
+          {/* Modal Konfirmasi Pisahkan Transaksi (Unmerge) */}
+          <Modal
+            isOpen={Boolean(unmergingTx)}
+            onClose={() => setUnmergingTx(null)}
+            title="✂️ Pisahkan Transaksi Gabungan (Unmerge)"
+            size="md"
+          >
+            <div className="space-y-4">
+              <p className="text-sm dark:text-gray-300 text-gray-600 leading-relaxed">
+                Apakah Anda yakin ingin memisahkan pesanan gabungan ini kembali menjadi{' '}
+                <strong>{unmergingTx?.items?.length || 0} transaksi mandiri</strong>?
+              </p>
+              <div className="p-3 rounded-xl dark:bg-surface-300 bg-gray-50 border dark:border-white/10 border-gray-200 text-xs space-y-1">
+                <p className="font-semibold dark:text-white text-gray-900">
+                  {unmergingTx?.itemName}
+                </p>
+                <p className="text-gray-400">
+                  Kode: {unmergingTx?.kodeBarang || '-'} | Total: {formatCurrency(unmergingTx?.sellingPrice)}
+                </p>
+                <p className="text-gray-400">
+                  Pelanggan: {unmergingTx?.namaPenerima || '-'} ({unmergingTx?.sumberPesanan || 'WhatsApp'})
+                </p>
+              </div>
+              <p className="text-xs dark:text-gray-400 text-gray-500">
+                Setiap barang akan menjadi baris transaksi mandiri. Data pembeli, alamat, harga jual, dan hak bagi hasil masing-masing pemilik akan tetap terjaga secara akurat.
+              </p>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="secondary" onClick={() => setUnmergingTx(null)} disabled={unmergingLoading}>
+                  Batal
+                </Button>
+                <Button onClick={handleConfirmUnmerge} loading={unmergingLoading}>
+                  Ya, Pisahkan Menjadi Transaksi Mandiri
                 </Button>
               </div>
             </div>

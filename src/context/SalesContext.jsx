@@ -1,7 +1,7 @@
 import { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { calculateProfitSharing, calculateOrderTotals } from '../utils/calculateProfitSharing';
-import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
+import { calculateProfitSharing, calculateOrderTotals, calculateItemProfitAndSharing } from '../utils/calculateProfitSharing';
+import { PROFIT_SHARING_CONFIG, getTeamMemberKey } from '../constants/profitSharingConfig';
 import {
   getTransactions,
   subscribeTransactions,
@@ -443,6 +443,96 @@ export function SalesProvider({ children }) {
     }
   };
 
+  // Pisahkan transaksi gabungan kembali menjadi transaksi perorangan/mandiri
+  const unmergeTransaction = async (mergedTxId) => {
+    try {
+      const mergedTx = state.transactions.find((t) => t.id === mergedTxId);
+      if (!mergedTx || !mergedTx.items || mergedTx.items.length <= 1) {
+        toast.error('Transaksi ini bukan transaksi gabungan');
+        return;
+      }
+
+      const createdTxs = [];
+      for (let i = 0; i < mergedTx.items.length; i++) {
+        const it = mergedTx.items[i];
+        const sellingPrice = Number(it.sellingPrice || 0);
+        const costPrice = Number(it.costPrice || 0);
+        const profit = Number(it.profit !== undefined ? it.profit : (sellingPrice - costPrice));
+
+        // Tentukan skema & profit sharing per barang
+        const rawOwner = (it.ownerName || mergedTx.ownerName || 'Akbar').trim();
+        const teamKey = getTeamMemberKey(rawOwner);
+        const defaultScheme = teamKey
+          ? { pemilikBarang: 85, operational: 15, akbar: 0, nesa: 0, andin: 0, ritza: 0 }
+          : { pemilikBarang: 70, operational: 10, akbar: 5, nesa: 5, andin: 5, ritza: 5 };
+
+        const skemaCustom = it.skemaCustom || defaultScheme;
+        const profitSharing = it.profitSharing || calculateItemProfitAndSharing({
+          sellingPrice,
+          costPrice,
+          skemaCustom,
+          ownerName: rawOwner,
+        }, profitSharingConfig).sharing;
+
+        const singleTxPayload = {
+          date: it.sourceTxDate || mergedTx.date,
+          itemName: it.itemName || it.name || 'Barang Terjual',
+          ownerName: rawOwner,
+          category: it.category || mergedTx.category || 'Baju',
+          costPrice,
+          sellingPrice,
+          paymentMethod: mergedTx.paymentMethod || 'Transfer Bank',
+          sumberPesanan: mergedTx.sumberPesanan || 'WhatsApp',
+          status: mergedTx.status || 'Terjual',
+          profit,
+          profitSharing,
+          skemaCustom,
+          ownerCustomScheme: skemaCustom,
+          kodeBarang: it.kodeBarang || null,
+          inventoryItemId: it.inventoryItemId || null,
+          namaPenerima: mergedTx.namaPenerima || '',
+          noHpPenerima: mergedTx.noHpPenerima || '',
+          alamatPenerima: mergedTx.alamatPenerima || '',
+          ekspedisi: mergedTx.ekspedisi || 'J&T Express',
+          resi: mergedTx.resi || '',
+          catatanPengiriman: mergedTx.catatanPengiriman || '',
+          createdAt: new Date(Date.now() + i * 50).toISOString(),
+        };
+
+        const saved = await addTransactionDoc(singleTxPayload);
+        createdTxs.push(saved);
+        dispatch({ type: ACTIONS.ADD_TRANSACTION, payload: saved });
+
+        // Update referensi transaksi di inventaris jika barang berasal dari stok
+        if (it.inventoryItemId) {
+          try {
+            await markItemAsSold(it.inventoryItemId, saved.id, {
+              sellingPrice,
+              namaPenerima: mergedTx.namaPenerima || '',
+              noHpPenerima: mergedTx.noHpPenerima || '',
+              alamatPenerima: mergedTx.alamatPenerima || '',
+              ekspedisi: mergedTx.ekspedisi || 'J&T Express',
+              resi: mergedTx.resi || '',
+            });
+          } catch (invErr) {
+            console.warn('Error updating inventory item ref on unmerge:', invErr);
+          }
+        }
+      }
+
+      // Hapus dokumen transaksi gabungan lama
+      await deleteTransactionDoc(mergedTxId);
+      dispatch({ type: ACTIONS.DELETE_TRANSACTION, payload: mergedTxId });
+
+      toast.success(`Berhasil memisahkan pesanan menjadi ${createdTxs.length} transaksi mandiri! 📦`);
+      return createdTxs;
+    } catch (err) {
+      console.error('Error unmerging transaction:', err);
+      toast.error('Gagal memisahkan transaksi gabungan.');
+      throw err;
+    }
+  };
+
   const deleteTransaction = async (id) => {
     try {
       const targetTx = state.transactions.find((t) => t.id === id);
@@ -525,6 +615,7 @@ export function SalesProvider({ children }) {
     addTransactionsBatch,
     updateTransaction,
     mergeTransactions,
+    unmergeTransaction,
     deleteTransaction,
     getTransactionsByDateRange,
     getCurrentMonthTransactions,

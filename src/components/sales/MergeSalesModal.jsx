@@ -8,6 +8,7 @@ import {
   PAYMENT_METHODS,
   ORDER_SOURCES,
   SHIPPING_COURIERS,
+  getTeamMemberKey,
 } from '../../constants/profitSharingConfig';
 import { calculateOrderTotals } from '../../utils/calculateProfitSharing';
 import toast from 'react-hot-toast';
@@ -39,32 +40,44 @@ export default function MergeSalesModal({
     selectedTransactions.forEach((tx, txIdx) => {
       if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
         tx.items.forEach((item, itemIdx) => {
+          const rawOwner = item.ownerName || tx.ownerName || 'Akbar';
+          const isTeam = Boolean(getTeamMemberKey(rawOwner));
+          const autoScheme = isTeam
+            ? { pemilikBarang: 85, operational: 15, akbar: 0, nesa: 0, andin: 0, ritza: 0 }
+            : { pemilikBarang: 70, operational: 10, akbar: 5, nesa: 5, andin: 5, ritza: 5 };
+
           list.push({
             id: item.id || `merge_${tx.id}_${itemIdx}`,
             itemName: item.itemName || 'Barang',
             category: item.category || 'Baju',
-            ownerName: item.ownerName || tx.ownerName || 'Akbar',
+            ownerName: rawOwner,
             costPrice: Number(item.costPrice || 0),
             sellingPrice: Number(item.sellingPrice || 0),
             kodeBarang: item.kodeBarang || null,
             inventoryItemId: item.inventoryItemId || null,
-            skemaCustom: item.skemaCustom || tx.skemaCustom || tx.ownerCustomScheme || null,
+            skemaCustom: item.skemaCustom || tx.skemaCustom || tx.ownerCustomScheme || autoScheme,
             sourceTxId: tx.id,
             sourceTxDate: tx.date,
           });
         });
       } else {
         // Transaksi lama format single item
+        const rawOwner = tx.ownerName || 'Akbar';
+        const isTeam = Boolean(getTeamMemberKey(rawOwner));
+        const autoScheme = isTeam
+          ? { pemilikBarang: 85, operational: 15, akbar: 0, nesa: 0, andin: 0, ritza: 0 }
+          : { pemilikBarang: 70, operational: 10, akbar: 5, nesa: 5, andin: 5, ritza: 5 };
+
         list.push({
           id: `merge_${tx.id}_0`,
           itemName: tx.itemName || 'Barang',
           category: tx.category || 'Baju',
-          ownerName: tx.ownerName || 'Akbar',
+          ownerName: rawOwner,
           costPrice: Number(tx.costPrice || 0),
           sellingPrice: Number(tx.sellingPrice || 0),
           kodeBarang: tx.kodeBarang || null,
           inventoryItemId: tx.inventoryItemId || null,
-          skemaCustom: tx.skemaCustom || tx.ownerCustomScheme || null,
+          skemaCustom: tx.skemaCustom || tx.ownerCustomScheme || autoScheme,
           sourceTxId: tx.id,
           sourceTxDate: tx.date,
         });

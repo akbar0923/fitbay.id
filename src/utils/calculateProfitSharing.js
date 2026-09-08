@@ -1,4 +1,4 @@
-import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig.js';
+import { PROFIT_SHARING_CONFIG, getTeamMemberKey } from '../constants/profitSharingConfig.js';
 
 /**
  * Normalisasi akses nilai profit sharing terhadap perbedaan penamaan kunci lama (alias)
@@ -110,7 +110,7 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
 
 /**
  * Menghitung keuntungan dan pembagian hasil untuk satu item spesifik
- * @param {object} item - Objek barang ({ sellingPrice, costPrice, skemaCustom })
+ * @param {object} item - Objek barang ({ sellingPrice, costPrice, skemaCustom, ownerName })
  * @param {object} [globalConfig] - Konfigurasi global persentase bagi hasil
  * @returns {object} { profit, sharing }
  */
@@ -138,6 +138,25 @@ export function calculateItemProfitAndSharing(item, globalConfig = PROFIT_SHARIN
         percentage: Number(pct || 0),
       };
     });
+  } else {
+    // Otomatisasi Skema Berdasarkan Pemilik Barang:
+    // Jika Pemilik Barang adalah Anggota Tim (Akbar, Nessa, Andin, Ritza) -> Skema 85% Pemilik, 15% Ops, 0% Komisi
+    // Jika Pemilik Barang adalah Penitip Luar (Atun, Bilah, dll) -> Skema Standar 70% Pemilik, 10% Ops, 5% Tim
+    const rawOwner = (item.ownerName || item.owner || '').trim().toLowerCase();
+    const isTeam = Boolean(getTeamMemberKey(rawOwner));
+
+    if (isTeam) {
+      schemeToUse = {
+        pemilikBarang: { percentage: 85, label: 'Pemilik Barang' },
+        operational: { percentage: 15, label: 'Operational' },
+        akbar: { percentage: 0, label: 'Akbar' },
+        nesa: { percentage: 0, label: 'Nessa' },
+        andin: { percentage: 0, label: 'Andin' },
+        ritza: { percentage: 0, label: 'Ritza' },
+      };
+    } else {
+      schemeToUse = configToUse;
+    }
   }
 
   const { sharing } = calculateProfitSharing(selling, cost, schemeToUse);
