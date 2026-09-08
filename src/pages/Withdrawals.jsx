@@ -4,7 +4,7 @@ import { useWithdrawals } from '../context/WithdrawalContext';
 import { useOwners } from '../context/OwnerContext';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDate } from '../utils/formatCurrency';
-import { calculateTotalSharing } from '../utils/calculateProfitSharing';
+import { calculateTotalSharing, calculateTeamCommissions } from '../utils/calculateProfitSharing';
 import { PROFIT_SHARING_CONFIG, TEAM_MEMBER_KEYS, getTeamMemberKey } from '../constants/profitSharingConfig';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -34,17 +34,64 @@ export default function Withdrawals() {
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
-  // Hitung total komisi tim standar (5% tim / 10% ops) dari transaksi terjual
-  const totalStandardSharing = useMemo(() => {
-    const soldTxs = transactions.filter((tx) => tx.status === 'Terjual');
-    return calculateTotalSharing(soldTxs, profitSharingConfig);
-  }, [transactions, profitSharingConfig]);
+  // Filter Periode Penjualan untuk Kas & Bagi Hasil
+  const [salesPeriod, setSalesPeriod] = useState('all'); // 'all' | '2026-09-08' | 'month' | 'custom'
+  const [customPeriodStart, setCustomPeriodStart] = useState('');
+  const [customPeriodEnd, setCustomPeriodEnd] = useState('');
+  const [teamDetailPeriodMode, setTeamDetailPeriodMode] = useState('active'); // 'active' | 'all'
 
-  // =========================================================================
-  // Perhitungan Pemisahan Saldo Barang: Tim Internal vs Penitip Eksternal
-  // =========================================================================
-  const { teamPersonalGoods, externalOwnerBalances, externalTotalEarned } = useMemo(() => {
-    // Inisialisasi akumulasi barang pribadi anggota tim (Akbar, Nesa, Andin, Ritza)
+  // Transaksi aktif sesuai filter periode
+  const activeTransactions = useMemo(() => {
+    if (salesPeriod === '2026-09-08') {
+      return transactions.filter((t) => t.date === '2026-09-08');
+    }
+    if (salesPeriod === 'month') {
+      return transactions.filter((t) => (t.date || '').startsWith('2026-09'));
+    }
+    if (salesPeriod === 'custom') {
+      if (customPeriodStart && customPeriodEnd) {
+        return transactions.filter(
+          (t) => (t.date || '') >= customPeriodStart && (t.date || '') <= customPeriodEnd
+        );
+      }
+      return transactions;
+    }
+    return transactions;
+  }, [transactions, salesPeriod, customPeriodStart, customPeriodEnd]);
+
+  // Penarikan aktif sesuai filter periode
+  const activeWithdrawals = useMemo(() => {
+    if (salesPeriod === '2026-09-08') {
+      return withdrawals.filter((w) => w.date === '2026-09-08');
+    }
+    if (salesPeriod === 'month') {
+      return withdrawals.filter((w) => (w.date || '').startsWith('2026-09'));
+    }
+    if (salesPeriod === 'custom') {
+      if (customPeriodStart && customPeriodEnd) {
+        return withdrawals.filter(
+          (w) => (w.date || '') >= customPeriodStart && (w.date || '') <= customPeriodEnd
+        );
+      }
+      return withdrawals;
+    }
+    return withdrawals;
+  }, [withdrawals, salesPeriod, customPeriodStart, customPeriodEnd]);
+
+  // Hitung komisi tim murni (5% tim / 10% ops) dari transaksi terjual pada periode aktif
+  const totalStandardSharing = useMemo(() => {
+    const soldTxs = activeTransactions.filter((tx) => tx.status === 'Terjual');
+    return calculateTeamCommissions(soldTxs);
+  }, [activeTransactions]);
+
+  // All-time team commissions untuk keperluan validasi modal penarikan
+  const allTimeCommissions = useMemo(() => {
+    const soldTxs = transactions.filter((tx) => tx.status === 'Terjual');
+    return calculateTeamCommissions(soldTxs);
+  }, [transactions]);
+
+  // Helper fungsi untuk memisahkan barang tim vs penitip luar dari daftar transaksi
+  const computeGoodsAndBalances = (txList, withList, isAllTimeMode) => {
     const akbarObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
     const nesaObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
     const andinObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
@@ -59,14 +106,12 @@ export default function Withdrawals() {
       ritza: ritzaObj,
     };
 
-    // Inisialisasi daftar pemilik eksternal dari master owners
     const extMap = {};
     owners.forEach((o) => {
       const cleanName = (o.name || '').trim();
       const lower = cleanName.toLowerCase();
       if (!lower) return;
 
-      // Jika BUKAN anggota tim, masukkan ke daftar pemilik eksternal
       if (!getTeamMemberKey(lower)) {
         extMap[lower] = {
           name: cleanName,
@@ -81,7 +126,6 @@ export default function Withdrawals() {
 
     let extEarnedSum = 0;
 
-    // Helper untuk memproses satu item penjualan
     const processSoldItem = (ownerRawName, sellingPrice, profit, psPemilikBarang, customScheme) => {
       const rawOwner = (ownerRawName || 'Akbar').trim();
       const lowerOwner = rawOwner.toLowerCase();
@@ -93,17 +137,15 @@ export default function Withdrawals() {
 
       const ownerShare = psPemilikBarang !== undefined
         ? Number(psPemilikBarang)
-        : (Number(profit || 0) * defaultOwnerPct) / 100;
+        : (Number(profit !== undefined ? profit : sellingPrice || 0) * defaultOwnerPct) / 100;
 
       const itemRev = Number(sellingPrice) || 0;
 
       if (teamKey && teamGoods[teamKey]) {
-        // 1. Jika pemilik barang adalah ANGGOTA TIM -> masuk ke saldo barang pribadi tim
         teamGoods[teamKey].earned += Math.round(ownerShare);
         teamGoods[teamKey].totalItems += 1;
         teamGoods[teamKey].totalRevenue += itemRev;
       } else {
-        // 2. Jika pemilik barang adalah PENITIP EKSTERNAL -> masuk ke saldo pemilik eksternal
         extEarnedSum += Math.round(ownerShare);
 
         if (!extMap[lowerOwner]) {
@@ -123,8 +165,7 @@ export default function Withdrawals() {
       }
     };
 
-    // Iterasi seluruh transaksi yang statusnya Terjual
-    transactions.forEach((tx) => {
+    txList.forEach((tx) => {
       if (tx.status !== 'Terjual') return;
 
       if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
@@ -146,9 +187,15 @@ export default function Withdrawals() {
       }
     });
 
-    // Format list pemilik eksternal dengan penarikan & sisa saldo
     const extList = Object.values(extMap).map((o) => {
-      const withdrawn = getTotalWithdrawnByOwner(o.name);
+      const withdrawn = isAllTimeMode
+        ? getTotalWithdrawnByOwner(o.name)
+        : withList.reduce((sum, w) => {
+            const clean = o.name.toLowerCase();
+            const wOwner = (w.ownerName || '').toLowerCase();
+            const wKey = (w.recipientKey || '').toLowerCase();
+            return (wOwner === clean || wKey === `owner_${clean}`) ? sum + (Number(w.amount) || 0) : sum;
+          }, 0);
       const remaining = Math.max(0, o.earned - withdrawn);
       return {
         ...o,
@@ -165,7 +212,17 @@ export default function Withdrawals() {
       externalOwnerBalances: extList,
       externalTotalEarned: extEarnedSum,
     };
-  }, [transactions, owners, profitSharingConfig, getTotalWithdrawnByOwner]);
+  };
+
+  // Perhitungan pada periode aktif
+  const { teamPersonalGoods, externalOwnerBalances, externalTotalEarned } = useMemo(() => {
+    return computeGoodsAndBalances(activeTransactions, activeWithdrawals, salesPeriod === 'all');
+  }, [activeTransactions, activeWithdrawals, salesPeriod, owners, profitSharingConfig, getTotalWithdrawnByOwner]);
+
+  // Perhitungan all-time untuk validasi modal penarikan
+  const allTimeGoodsAndBalances = useMemo(() => {
+    return computeGoodsAndBalances(transactions, withdrawals, true);
+  }, [transactions, withdrawals, owners, profitSharingConfig, getTotalWithdrawnByOwner]);
 
   // Daftar opsi penerima penarikan dari profitSharingConfig
   const recipientOptions = useMemo(() => {
@@ -408,11 +465,13 @@ export default function Withdrawals() {
   const previewRounding = Number(formData.roundingAmount) || 0;
   const previewTotalTransferred = previewAmount + previewRounding;
 
-  // Hitung saldo tersedia untuk penerima yang sedang dipilih di form modal
+  // Hitung saldo tersedia untuk penerima yang sedang dipilih di form modal (berdasarkan akumulatif kas riil)
   const currentRecipientDetails = useMemo(() => {
+    const { teamPersonalGoods: allGoods, externalOwnerBalances: allExtBalances, externalTotalEarned: allExtEarned } = allTimeGoodsAndBalances;
+
     if (formData.category === 'external_owner') {
       if (formData.ownerName && formData.ownerName !== 'Semua Penitip Eksternal') {
-        const ownerObj = externalOwnerBalances.find(
+        const ownerObj = allExtBalances.find(
           (o) => o.name.toLowerCase() === formData.ownerName.toLowerCase()
         );
         const earned = ownerObj ? ownerObj.earned : 0;
@@ -435,11 +494,11 @@ export default function Withdrawals() {
       // General external owners
       const withdrawn = getTotalWithdrawn('pemilikBarang');
       const editingComp = editingItem && editingItem.recipientKey === 'pemilikBarang' ? Number(editingItem.amount) : 0;
-      const remaining = Math.max(0, externalTotalEarned - (withdrawn - editingComp));
+      const remaining = Math.max(0, allExtEarned - (withdrawn - editingComp));
       return {
-        totalEarned: externalTotalEarned,
+        totalEarned: allExtEarned,
         commission: 0,
-        personalGoods: externalTotalEarned,
+        personalGoods: allExtEarned,
         withdrawn,
         remaining,
         label: 'Penitip Eksternal (Gabungan)',
@@ -447,10 +506,9 @@ export default function Withdrawals() {
     }
 
     // Team Member / Operational
-    // Team Member / Operational
     const teamKey = formData.recipientKey;
     if (teamKey === 'operational' || teamKey === 'operasional') {
-      const earned = totalStandardSharing.operational || totalStandardSharing.operasional || 0;
+      const earned = allTimeCommissions.operational || allTimeCommissions.operasional || 0;
       const withdrawn = getTotalWithdrawn('operational');
       const editingComp =
         editingItem && (editingItem.recipientKey === 'operational' || editingItem.recipientKey === 'operasional')
@@ -469,8 +527,8 @@ export default function Withdrawals() {
 
     // Individual Team Members (Akbar, Nesa, Andin, Ritza)
     const normalizedKey = getTeamMemberKey(teamKey) || teamKey;
-    const commissionEarned = totalStandardSharing[teamKey] || totalStandardSharing[normalizedKey] || 0;
-    const personalGoodsEarned = teamPersonalGoods[teamKey]?.earned || teamPersonalGoods[normalizedKey]?.earned || 0;
+    const commissionEarned = allTimeCommissions[teamKey] || allTimeCommissions[normalizedKey] || 0;
+    const personalGoodsEarned = allGoods[teamKey]?.earned || allGoods[normalizedKey]?.earned || 0;
     const totalCombinedEarned = commissionEarned + personalGoodsEarned;
 
     const withdrawn = getTotalWithdrawn(teamKey);
@@ -499,10 +557,8 @@ export default function Withdrawals() {
     formData.category,
     formData.ownerName,
     formData.recipientKey,
-    externalOwnerBalances,
-    externalTotalEarned,
-    totalStandardSharing,
-    teamPersonalGoods,
+    allTimeGoodsAndBalances,
+    allTimeCommissions,
     recipientOptions,
     getTotalWithdrawn,
     getTotalWithdrawnByOwner,
@@ -521,21 +577,28 @@ export default function Withdrawals() {
   const totalAllRounding = withdrawals.reduce((sum, w) => sum + (Number(w.roundingAmount) || 0), 0);
 
   const soldTransactions = useMemo(() => {
-    return transactions.filter((t) => t.status === 'Terjual');
-  }, [transactions]);
+    return activeTransactions.filter((t) => t.status === 'Terjual');
+  }, [activeTransactions]);
 
-  // Total omset kotor seluruh penjualan terjual
+  // Total omset kotor seluruh penjualan terjual pada periode aktif
   const totalGrossRevenue = useMemo(() => {
     return soldTransactions.reduce((sum, t) => sum + (Number(t.sellingPrice) || 0), 0);
   }, [soldTransactions]);
 
-  // Total keuntungan bisnis & penitip dari transaksi terjual
+  // Total keuntungan bisnis & penitip dari transaksi terjual pada periode aktif
   const totalOverallEarned = useMemo(() => {
-    return soldTransactions.reduce((sum, t) => sum + (Number(t.profit) || 0), 0);
+    return soldTransactions.reduce((sum, t) => sum + (Number(t.profit !== undefined ? t.profit : t.sellingPrice) || 0), 0);
   }, [soldTransactions]);
 
-  // Total Saldo Belum Ditarik Secara Keseluruhan (Sisa Kas / Hak Belum Cair)
-  const totalOverallRemaining = Math.max(0, totalOverallEarned - totalAllWithdrawn);
+  // Total penarikan pada periode aktif
+  const activePeriodWithdrawn = useMemo(() => {
+    return salesPeriod === 'all'
+      ? totalAllWithdrawn
+      : activeWithdrawals.reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
+  }, [salesPeriod, totalAllWithdrawn, activeWithdrawals]);
+
+  // Total Saldo Belum Ditarik Secara Keseluruhan / Pada Periode Aktif
+  const totalOverallRemaining = Math.max(0, totalOverallEarned - activePeriodWithdrawn);
 
   // Filter Data Riwayat Penarikan
   const filteredWithdrawals = useMemo(() => {
@@ -584,9 +647,17 @@ export default function Withdrawals() {
     const rec = recipientOptions.find((r) => r.key === teamDetailKey || r.key === normalizedKey);
     const label = rec?.label || teamDetailKey;
 
+    const sourceTxs = (teamDetailPeriodMode === 'active' && salesPeriod !== 'all')
+      ? activeTransactions
+      : transactions;
+
+    const sourceWithdrawals = (teamDetailPeriodMode === 'active' && salesPeriod !== 'all')
+      ? activeWithdrawals
+      : withdrawals;
+
     // 1. Barang Pribadi
     const personalItems = [];
-    transactions.forEach((tx) => {
+    sourceTxs.forEach((tx) => {
       if (tx.status !== 'Terjual') return;
       if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
         tx.items.forEach((it, idx) => {
@@ -646,7 +717,7 @@ export default function Withdrawals() {
 
     // 2. Komisi Tim (5%) dari Penitip Luar
     const commissionsList = [];
-    transactions.forEach((tx) => {
+    sourceTxs.forEach((tx) => {
       if (tx.status !== 'Terjual') return;
       const comm = Number(tx.profitSharing?.[normalizedKey] || tx.profitSharing?.[teamDetailKey] || 0);
       if (comm > 0) {
@@ -665,7 +736,7 @@ export default function Withdrawals() {
     const totalCommission = commissionsList.reduce((sum, c) => sum + c.commission, 0);
 
     // 3. Riwayat Penarikan
-    const teamWithdrawals = withdrawals.filter((w) => {
+    const teamWithdrawals = sourceWithdrawals.filter((w) => {
       const wKey = (w.recipientKey || '').toLowerCase().trim();
       const wOwner = (w.ownerName || '').toLowerCase().trim();
       const wRec = (w.recipientName || '').toLowerCase().trim();
@@ -694,8 +765,9 @@ export default function Withdrawals() {
       totalWithdrawn,
       totalEarned,
       remaining,
+      isPeriodFiltered: teamDetailPeriodMode === 'active' && salesPeriod !== 'all',
     };
-  }, [teamDetailKey, transactions, withdrawals, recipientOptions]);
+  }, [teamDetailKey, teamDetailPeriodMode, salesPeriod, activeTransactions, transactions, activeWithdrawals, withdrawals, recipientOptions]);
 
   // Export Riwayat ke Excel
   const exportToExcel = () => {
@@ -760,13 +832,68 @@ export default function Withdrawals() {
         </div>
       </div>
 
+      {/* Period Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl dark:bg-surface-200 bg-gray-50 border dark:border-white/5 border-gray-200 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-bold dark:text-gray-400 text-gray-600 uppercase tracking-wider pl-1">
+            Periode Penjualan:
+          </span>
+          <div className="flex dark:bg-surface-300 bg-white rounded-xl p-1 border dark:border-white/5 border-gray-200 shadow-sm overflow-x-auto">
+            {[
+              { id: 'all', label: 'Semua Waktu (Akumulatif Kas)' },
+              { id: '2026-09-08', label: 'Penjualan 8 Sep 2026' },
+              { id: 'month', label: 'Bulan Ini (Sep 2026)' },
+              { id: 'custom', label: 'Kustom' },
+            ].map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSalesPeriod(p.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 shrink-0 ${
+                  salesPeriod === p.id
+                    ? 'bg-accent text-dark-800 shadow-sm'
+                    : 'dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {salesPeriod === 'custom' && (
+          <div className="flex items-center gap-2 pr-1 animate-fade-in">
+            <input
+              type="date"
+              value={customPeriodStart}
+              onChange={(e) => setCustomPeriodStart(e.target.value)}
+              className="px-2.5 py-1 text-xs rounded-lg dark:bg-surface-300 bg-white border dark:border-white/10 border-gray-300 dark:text-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            <span className="text-xs text-gray-400">—</span>
+            <input
+              type="date"
+              value={customPeriodEnd}
+              onChange={(e) => setCustomPeriodEnd(e.target.value)}
+              className="px-2.5 py-1 text-xs rounded-lg dark:bg-surface-300 bg-white border dark:border-white/10 border-gray-300 dark:text-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+        )}
+
+        {salesPeriod === '2026-09-08' && (
+          <div className="text-xs text-emerald-400 font-semibold pr-2 flex items-center gap-1.5 animate-fade-in">
+            <span>✨</span>
+            <span>Menampilkan data batch penjualan 8 September 2026 (Total Omset: Rp 470.000)</span>
+          </div>
+        )}
+      </div>
+
       {/* Ringkasan Kas Rekening: Total Uang Masuk, Uang Keluar, & Saldo Kas di Rekening */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Total Uang Masuk */}
         <div className="dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
             <span className="text-xs font-bold dark:text-gray-400 text-gray-500 uppercase tracking-wider block mb-1">
-              Total Keuntungan Hak Siap Bagi
+              {salesPeriod === 'all' ? 'Total Keuntungan Hak Siap Bagi' : 'Hak Keuntungan Periode Terpilih'}
             </span>
             <p className="text-2xl lg:text-3xl font-extrabold dark:text-white text-gray-900 tracking-tight">
               {formatCurrency(totalOverallEarned)}
@@ -782,15 +909,19 @@ export default function Withdrawals() {
         <div className="dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
             <span className="text-xs font-bold dark:text-gray-400 text-gray-500 uppercase tracking-wider block mb-1">
-              Total Uang Keluar (Penarikan Ditransfer)
+              {salesPeriod === 'all' ? 'Total Uang Keluar (Penarikan Ditransfer)' : 'Penarikan di Periode Terpilih'}
             </span>
             <p className="text-2xl lg:text-3xl font-extrabold text-gray-400 tracking-tight">
-              {formatCurrency(totalAllWithdrawn)}
+              {formatCurrency(activePeriodWithdrawn)}
             </p>
           </div>
           <p className="text-xs dark:text-gray-500 text-gray-400 mt-2 flex items-center gap-1">
             <span>📤</span>
-            <span>{withdrawals.length} transfer pencairan saldo tercatat</span>
+            <span>
+              {salesPeriod === 'all'
+                ? `${withdrawals.length} transfer pencairan saldo tercatat`
+                : `${activeWithdrawals.length} transfer pencairan pada periode ini`}
+            </span>
           </p>
         </div>
 
@@ -800,7 +931,7 @@ export default function Withdrawals() {
           <div>
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-extrabold text-emerald-400 uppercase tracking-wider">
-                Saldo Kas di Rekening (Total Belum Ditarik)
+                {salesPeriod === 'all' ? 'Saldo Kas di Rekening (Total Belum Ditarik)' : 'Sisa Hak Periode Ini (Belum Ditarik)'}
               </span>
               <span className="text-base">🏦</span>
             </div>
@@ -809,7 +940,9 @@ export default function Withdrawals() {
             </p>
           </div>
           <p className="text-xs text-emerald-400/80 mt-2 font-medium">
-            Uang fisik di rekening sebelum dibagi ke masing-masing penerima
+            {salesPeriod === 'all'
+              ? 'Uang fisik di rekening sebelum dibagi ke masing-masing penerima'
+              : 'Sisa saldo bagi hasil penjualan periode ini yang belum dicairkan'}
           </p>
         </div>
       </div>
@@ -841,22 +974,42 @@ export default function Withdrawals() {
 
             if (isOwnerCard) {
               earned = externalTotalEarned;
-              withdrawn = getTotalWithdrawn('pemilikBarang');
+              withdrawn = salesPeriod === 'all'
+                ? getTotalWithdrawn('pemilikBarang')
+                : activeWithdrawals
+                    .filter((w) => w.recipientCategory === 'external_owner' || w.recipientKey === 'pemilikBarang')
+                    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
               remaining = Math.max(0, earned - withdrawn);
             } else if (isTeamMember) {
-              // 2. Jika kartu Anggota Tim -> Gabungan Komisi Tim (5%) + Keuntungan Barang Pribadi (70%)
+              // 2. Jika kartu Anggota Tim -> Gabungan Komisi Tim (5%) + Keuntungan Barang Pribadi (85%)
               const lookupKey = normalizedTeamKey || rec.key;
               commissionEarned = totalStandardSharing[rec.key] || totalStandardSharing[lookupKey] || 0;
               personalGoodsEarned = teamPersonalGoods[rec.key]?.earned || teamPersonalGoods[lookupKey]?.earned || 0;
               personalItemsCount = teamPersonalGoods[rec.key]?.totalItems || teamPersonalGoods[lookupKey]?.totalItems || 0;
               earned = commissionEarned + personalGoodsEarned;
 
-              withdrawn = getTotalWithdrawn(rec.key);
+              withdrawn = salesPeriod === 'all'
+                ? getTotalWithdrawn(rec.key)
+                : activeWithdrawals
+                    .filter((w) => {
+                      const k = (w.recipientKey || '').toLowerCase();
+                      const o = (w.ownerName || '').toLowerCase();
+                      const n = lookupKey.toLowerCase();
+                      return k === n || k === `owner_${n}` || o === n;
+                    })
+                    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
               remaining = Math.max(0, earned - withdrawn);
             } else {
-              // 3. Operasional (10%)
+              // 3. Operasional (10% titipan luar + 15% barang tim)
               earned = totalStandardSharing[rec.key] || totalStandardSharing.operational || 0;
-              withdrawn = getTotalWithdrawn(rec.key);
+              withdrawn = salesPeriod === 'all'
+                ? getTotalWithdrawn(rec.key)
+                : activeWithdrawals
+                    .filter((w) => {
+                      const k = (w.recipientKey || '').toLowerCase();
+                      return k === 'operational' || k === 'operasional';
+                    })
+                    .reduce((sum, w) => sum + (Number(w.amount) || 0), 0);
               remaining = Math.max(0, earned - withdrawn);
             }
 
@@ -1439,6 +1592,44 @@ export default function Withdrawals() {
       >
         {selectedTeamDetails && (
           <div className="space-y-4">
+            {/* Period Filter Indicator & Switcher inside Modal */}
+            {salesPeriod !== 'all' && (
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl dark:bg-surface-300 bg-gray-100 border dark:border-white/5 border-gray-200 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="dark:text-gray-400 text-gray-600">Menampilkan:</span>
+                  <span className="font-bold text-accent">
+                    {teamDetailPeriodMode === 'active'
+                      ? (salesPeriod === '2026-09-08' ? 'Batch Penjualan 8 Sep 2026' : 'Periode Terpilih')
+                      : 'Semua Waktu (Akumulatif Kas)'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTeamDetailPeriodMode('active')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      teamDetailPeriodMode === 'active'
+                        ? 'bg-accent text-dark-800 shadow-sm'
+                        : 'dark:bg-white/5 bg-white text-gray-600 dark:text-gray-300 hover:bg-accent/15'
+                    }`}
+                  >
+                    Periode Terpilih
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTeamDetailPeriodMode('all')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      teamDetailPeriodMode === 'all'
+                        ? 'bg-accent text-dark-800 shadow-sm'
+                        : 'dark:bg-white/5 bg-white text-gray-600 dark:text-gray-300 hover:bg-accent/15'
+                    }`}
+                  >
+                    Semua Waktu
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Top Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3.5 rounded-xl dark:bg-surface-300 bg-gray-50 border dark:border-white/5 border-gray-200">

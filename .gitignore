@@ -29,3 +29,6 @@ dist-ssr
 .env.development
 .env.production
 .env.*.local
+
+# Scratch temporary test scripts
+scratch/

@@ -56,31 +56,59 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
   });
 
   transactions.forEach((tx) => {
-    if (tx.status === 'Terjual') {
-      if (tx.profitSharing) {
-        Object.keys(configToUse).forEach((key) => {
-          totals[key] += getPsValue(tx.profitSharing, key);
-        });
-      } else if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
-        tx.items.forEach((it) => {
-          if (it.profitSharing) {
-            Object.keys(configToUse).forEach((key) => {
-              totals[key] += getPsValue(it.profitSharing, key);
-            });
-          } else if (it.profit > 0) {
-            Object.entries(configToUse).forEach(([key, config]) => {
-              const pct = typeof config === 'object' ? Number(config.percentage) || 0 : Number(config) || 0;
-              totals[key] += Math.round((Number(it.profit) * pct) / 100);
-            });
-          }
-        });
-      } else if (tx.profit > 0) {
-        // Fallback hitung on the fly jika profitSharing belum tersimpan
-        Object.entries(configToUse).forEach(([key, config]) => {
-          const pct = typeof config === 'object' ? Number(config.percentage) || 0 : Number(config) || 0;
-          totals[key] += Math.round((tx.profit * pct) / 100);
-        });
+    if (tx.status !== 'Terjual') return;
+
+    if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+      tx.items.forEach((it) => {
+        const owner = it.ownerName || tx.ownerName || '';
+        const tk = getTeamMemberKey(owner);
+        const sell = Number(it.sellingPrice || 0);
+        const profit = Number(it.profit !== undefined ? it.profit : sell);
+
+        if (tk && totals[tk] !== undefined) {
+          // Barang pribadi anggota tim (85% atau skema custom yang tersimpan)
+          const custom = it.skemaCustom || tx.skemaCustom;
+          const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
+          const hak = it.profitSharing?.pemilikBarang !== undefined
+            ? Number(it.profitSharing.pemilikBarang)
+            : Math.round((profit * pct) / 100);
+          totals[tk] += hak;
+        } else {
+          // Barang penitip eksternal (70%)
+          const hak = it.profitSharing?.pemilikBarang !== undefined
+            ? Number(it.profitSharing.pemilikBarang)
+            : Math.round(profit * 0.70);
+          totals.pemilikBarang += hak;
+        }
+      });
+    } else {
+      const owner = tx.ownerName || tx.owner || '';
+      const tk = getTeamMemberKey(owner);
+      const sell = Number(tx.sellingPrice || 0);
+      const profit = Number(tx.profit !== undefined ? tx.profit : sell);
+
+      if (tk && totals[tk] !== undefined) {
+        const custom = tx.skemaCustom || tx.ownerCustomScheme;
+        const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
+        const hak = tx.profitSharing?.pemilikBarang !== undefined
+          ? Number(tx.profitSharing.pemilikBarang)
+          : Math.round((profit * pct) / 100);
+        totals[tk] += hak;
+      } else {
+        const hak = tx.profitSharing?.pemilikBarang !== undefined
+          ? Number(tx.profitSharing.pemilikBarang)
+          : Math.round(profit * 0.70);
+        totals.pemilikBarang += hak;
       }
+    }
+
+    // Tambahkan Operasional dan Komisi Tim 5% dari penjualan penitip eksternal
+    if (tx.profitSharing) {
+      totals.operational += Number(tx.profitSharing.operational || tx.profitSharing.operasional || 0);
+      if (totals.akbar !== undefined) totals.akbar += Number(tx.profitSharing.akbar || 0);
+      if (totals.nesa !== undefined) totals.nesa += Number(tx.profitSharing.nesa || tx.profitSharing.nessa || 0);
+      if (totals.andin !== undefined) totals.andin += Number(tx.profitSharing.andin || 0);
+      if (totals.ritza !== undefined) totals.ritza += Number(tx.profitSharing.ritza || 0);
     }
   });
 
@@ -106,6 +134,39 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
   }
 
   return totals;
+}
+
+/**
+ * Menghitung hanya komisi tim (5% masing-masing) dan operasional dari transaksi
+ * @param {Array} transactions
+ * @returns {object} { akbar, nesa, andin, ritza, operational }
+ */
+export function calculateTeamCommissions(transactions) {
+  const commissions = {
+    akbar: 0,
+    nesa: 0,
+    andin: 0,
+    ritza: 0,
+    operational: 0,
+  };
+
+  transactions.forEach((tx) => {
+    if (tx.status !== 'Terjual') return;
+    if (tx.profitSharing) {
+      commissions.operational += Number(tx.profitSharing.operational || tx.profitSharing.operasional || 0);
+      commissions.akbar += Number(tx.profitSharing.akbar || 0);
+      commissions.nesa += Number(tx.profitSharing.nesa || tx.profitSharing.nessa || 0);
+      commissions.andin += Number(tx.profitSharing.andin || 0);
+      commissions.ritza += Number(tx.profitSharing.ritza || 0);
+    }
+  });
+
+  // Mirror aliases so either key works seamlessly
+  commissions.muhbar = commissions.akbar;
+  commissions.nessa = commissions.nesa;
+  commissions.operasional = commissions.operational;
+
+  return commissions;
 }
 
 /**
