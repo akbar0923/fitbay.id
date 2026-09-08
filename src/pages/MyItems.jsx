@@ -10,12 +10,13 @@ import { SkeletonCard, SkeletonTable } from '../components/ui/Skeleton';
 import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
 import InventoryFormModal from '../components/inventory/InventoryFormModal';
 import SalesFormModal from '../components/sales/SalesFormModal';
+import { calculateOrderTotals } from '../utils/calculateProfitSharing';
 import toast from 'react-hot-toast';
 
 export default function MyItems() {
   const { user } = useAuth();
   const { items, loading: inventoryLoading, updateItem, markAsSold } = useInventory();
-  const { transactions, loading: salesLoading, profitSharingConfig, updateTransaction, addTransaction } = useSales();
+  const { transactions, loading: salesLoading, profitSharingConfig, updateTransaction, addTransaction, deleteTransaction } = useSales();
   const { getTotalWithdrawnByOwner, getTotalWithdrawn } = useWithdrawals();
 
   const loading = inventoryLoading || salesLoading;
@@ -314,32 +315,165 @@ export default function MyItems() {
   const handleInventoryEditSubmit = async (formData) => {
     try {
       if (editingInventoryData?.id) {
-        await updateItem(editingInventoryData.id, formData);
+        const wasSold = editingInventoryData.status === 'Terjual';
+        const isNowSold = formData.status === 'Terjual';
+        const itemId = editingInventoryData.id;
+        const itemCode = (editingInventoryData.kodeBarang || '').trim().toLowerCase();
 
-        // Jika status barang diubah menjadi 'Terjual' dan belum memiliki referensi transaksi:
-        if (formData.status === 'Terjual' && (!editingInventoryData.referensiTransaksiId || editingInventoryData.status !== 'Terjual')) {
-          const sellingPrice = Number(formData.sellingPrice || formData.hargaJual || formData.hargaModal || 0);
-          const newTx = await addTransaction({
-            date: formData.tanggalTerjual || new Date().toISOString().split('T')[0],
-            itemName: formData.namaBarang || editingInventoryData.namaBarang,
-            ownerName: formData.pemilikBarang || editingInventoryData.pemilikBarang || 'Akbar',
-            category: formData.kategori || editingInventoryData.kategori || 'Baju',
-            costPrice: Number(formData.hargaModal || editingInventoryData.hargaModal || 0),
-            sellingPrice: sellingPrice,
-            paymentMethod: formData.paymentMethod || 'Transfer Bank',
-            sumberPesanan: formData.sumberPesanan || 'WhatsApp',
-            status: 'Terjual',
-            kodeBarang: formData.kodeBarang || editingInventoryData.kodeBarang,
-            inventoryItemId: editingInventoryData.id,
-          });
-
-          if (newTx?.id) {
-            await markAsSold(editingInventoryData.id, newTx.id, {
-              sellingPrice: sellingPrice,
-            });
+        // Helper cari transaksi
+        const linkedTxs = (transactions || []).filter((tx) => {
+          if (editingInventoryData.referensiTransaksiId && tx.id === editingInventoryData.referensiTransaksiId) return true;
+          if (itemId && tx.inventoryItemId === itemId) return true;
+          if (itemCode && tx.kodeBarang && tx.kodeBarang.toLowerCase() === itemCode) return true;
+          if (tx.items && Array.isArray(tx.items)) {
+            return tx.items.some(
+              (it) =>
+                (itemId && it.inventoryItemId === itemId) ||
+                (itemCode && it.kodeBarang && it.kodeBarang.toLowerCase() === itemCode)
+            );
           }
+          return false;
+        });
+
+        // 1. Dari Terjual -> Belum Terjual
+        if (wasSold && !isNowSold) {
+          formData.referensiTransaksiId = null;
+          formData.tanggalTerjual = null;
+          formData.namaPenerima = '';
+          formData.noHpPenerima = '';
+          formData.alamatPenerima = '';
+          formData.resi = '';
+
+          await updateItem(editingInventoryData.id, formData);
+
+          for (const tx of linkedTxs) {
+            if (tx.items && Array.isArray(tx.items) && tx.items.length > 1) {
+              const remainingItems = tx.items.filter((it) => {
+                if (itemId && it.inventoryItemId === itemId) return false;
+                if (itemCode && it.kodeBarang && it.kodeBarang.toLowerCase() === itemCode) return false;
+                return true;
+              });
+
+              if (remainingItems.length > 0) {
+                const totals = calculateOrderTotals(remainingItems, profitSharingConfig);
+                await updateTransaction(tx.id, {
+                  ...tx,
+                  items: remainingItems,
+                  costPrice: totals.totalCost,
+                  sellingPrice: totals.totalSelling,
+                  profit: totals.totalProfit,
+                  profitSharing: totals.totalSharing,
+                  itemName: remainingItems.map((it) => it.itemName).join(', '),
+                  kodeBarang: remainingItems.map((it) => it.kodeBarang).filter(Boolean).join(', '),
+                });
+              } else {
+                await deleteTransaction(tx.id);
+              }
+            } else {
+              await deleteTransaction(tx.id);
+            }
+          }
+
+          toast.success(`Barang [${formData.kodeBarang}] dikembalikan ke Belum Terjual & penjualan disinkronkan!`);
+          setIsEditInventoryOpen(false);
+          setEditingInventoryData(null);
+          return;
         }
 
+        // 2. Dari Belum Terjual -> Terjual
+        if (!wasSold && isNowSold) {
+          const sellingPrice = Number(formData.hargaJual || formData.sellingPrice || formData.hargaModal || 0);
+
+          if (linkedTxs.length > 0) {
+            const existingTx = linkedTxs[0];
+            formData.referensiTransaksiId = existingTx.id;
+            formData.tanggalTerjual = formData.tanggalTerjual || existingTx.date || new Date().toISOString().split('T')[0];
+            await updateItem(editingInventoryData.id, formData);
+            await updateTransaction(existingTx.id, {
+              ...existingTx,
+              status: 'Terjual',
+              sellingPrice: sellingPrice || existingTx.sellingPrice,
+              costPrice: Number(formData.hargaModal || existingTx.costPrice || 0),
+            });
+          } else {
+            const newTx = await addTransaction({
+              date: formData.tanggalTerjual || new Date().toISOString().split('T')[0],
+              itemName: formData.namaBarang || editingInventoryData.namaBarang,
+              ownerName: formData.pemilikBarang || editingInventoryData.pemilikBarang || 'Akbar',
+              category: formData.kategori || editingInventoryData.kategori || 'Baju',
+              costPrice: Number(formData.hargaModal || editingInventoryData.hargaModal || 0),
+              sellingPrice: sellingPrice,
+              paymentMethod: formData.paymentMethod || 'Transfer Bank',
+              sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+              status: 'Terjual',
+              kodeBarang: formData.kodeBarang || editingInventoryData.kodeBarang,
+              inventoryItemId: editingInventoryData.id,
+            });
+
+            if (newTx?.id) {
+              formData.referensiTransaksiId = newTx.id;
+              formData.tanggalTerjual = newTx.date;
+            }
+            await updateItem(editingInventoryData.id, formData);
+          }
+
+          toast.success(`Barang [${formData.kodeBarang}] ditandai Terjual & tercatat di Penjualan!`);
+          setIsEditInventoryOpen(false);
+          setEditingInventoryData(null);
+          return;
+        }
+
+        // 3. Tetap Terjual (update info)
+        if (wasSold && isNowSold) {
+          await updateItem(editingInventoryData.id, formData);
+          const sellingPrice = Number(formData.hargaJual || formData.sellingPrice || 0);
+          for (const tx of linkedTxs) {
+            if (tx.items && Array.isArray(tx.items) && tx.items.length > 1) {
+              const updatedItems = tx.items.map((it) => {
+                if (
+                  it.inventoryItemId === itemId ||
+                  (it.kodeBarang && it.kodeBarang.toLowerCase() === itemCode)
+                ) {
+                  return {
+                    ...it,
+                    itemName: formData.namaBarang || it.itemName,
+                    category: formData.kategori || it.category,
+                    ownerName: formData.pemilikBarang || it.ownerName,
+                    costPrice: Number(formData.hargaModal !== undefined ? formData.hargaModal : it.costPrice),
+                    sellingPrice: sellingPrice || it.sellingPrice,
+                  };
+                }
+                return it;
+              });
+              const totals = calculateOrderTotals(updatedItems, profitSharingConfig);
+              await updateTransaction(tx.id, {
+                ...tx,
+                items: updatedItems,
+                costPrice: totals.totalCost,
+                sellingPrice: totals.totalSelling,
+                profit: totals.totalProfit,
+                profitSharing: totals.totalSharing,
+                itemName: updatedItems.map((i) => i.itemName).join(', '),
+              });
+            } else {
+              await updateTransaction(tx.id, {
+                ...tx,
+                itemName: formData.namaBarang || tx.itemName,
+                category: formData.kategori || tx.category,
+                ownerName: formData.pemilikBarang || tx.ownerName,
+                costPrice: Number(formData.hargaModal !== undefined ? formData.hargaModal : tx.costPrice),
+                ...(sellingPrice ? { sellingPrice } : {}),
+              });
+            }
+          }
+          toast.success(`Barang [${formData.kodeBarang}] berhasil diperbarui!`);
+          setIsEditInventoryOpen(false);
+          setEditingInventoryData(null);
+          return;
+        }
+
+        // 4. Tetap Belum Terjual
+        await updateItem(editingInventoryData.id, formData);
         toast.success(`Barang [${formData.kodeBarang}] berhasil diperbarui!`);
       }
       setIsEditInventoryOpen(false);
