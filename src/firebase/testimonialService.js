@@ -172,14 +172,10 @@ export async function submitPublicTestimonial({
     const newDoc = {
       namaPembeli: cleanNama,
       isiTestimoni: cleanIsi,
-      rating: cleanRating,
-      namaBarang: cleanBarang,
-      fotoUrl: fotoUrl || '',
-      tanggal: dateStr,
+      rating: parseInt(cleanRating, 10),
+      status: 'menunggu',
       sumber: 'publik',
-      status: 'menunggu', // Wajib menunggu persetujuan
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
+      tanggal: dateStr,
     };
 
     const docRef = await addDoc(getTestimonialsRef(), newDoc);

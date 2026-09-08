@@ -176,13 +176,9 @@ export default async function handler(req, res) {
         namaPembeli: nama,
         isiTestimoni: isi,
         rating: rating,
-        namaBarang: barang,
-        fotoUrl: fotoUrl,
         tanggal: dateStr,
         sumber: 'publik',
-        status: 'menunggu', // Selalu menunggu persetujuan
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
+        status: 'menunggu',
       };
 
       const db = getAdminDb();

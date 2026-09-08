@@ -84,9 +84,10 @@ service cloud.firestore {
     // 7. Koleksi Testimoni Pelanggan (Testimonials)
     // - Siapa saja tanpa login boleh membaca ulasan yang berstatus 'disetujui'
     // - Admin/Superadmin boleh membaca SEMUA testimoni (termasuk 'menunggu' dan 'ditolak')
-    // - Siapa saja boleh mengirim ulasan publik dengan syarat status wajib 'menunggu' dan sumber 'publik'
-    // - Admin/Superadmin boleh membuat testimoni langsung dengan status atau sumber apapun
-    // - HANYA Admin/Superadmin yang berhak mengupdate status/edit isi ulasan dan menghapus testimoni
+    // - Publik boleh mengirim ulasan baru HANYA jika status='menunggu', sumber='publik',
+    //   field dibatasi (tanpa field asing), dan isinya lolos validasi panjang/rating
+    // - Admin/Superadmin boleh membuat testimoni langsung dengan status/sumber apapun
+    // - HANYA Admin/Superadmin yang berhak update status/edit isi ulasan dan menghapus testimoni
     match /testimonials/{testimonialId} {
       allow read: if (resource.data.status == 'disetujui') || (isAuthenticated() && isAdmin());
 
@@ -94,10 +95,7 @@ service cloud.firestore {
         (
           request.resource.data.status == 'menunggu' &&
           request.resource.data.sumber == 'publik' &&
-          request.resource.data.keys().hasOnly([
-            'namaPembeli', 'isiTestimoni', 'rating', 'status', 'sumber', 'tanggal',
-            'namaBarang', 'fotoUrl', 'createdAt', 'updatedAt'
-          ]) &&
+          request.resource.data.keys().hasOnly(['namaPembeli', 'isiTestimoni', 'rating', 'status', 'sumber', 'tanggal']) &&
           request.resource.data.namaPembeli is string &&
           request.resource.data.namaPembeli.size() > 0 &&
           request.resource.data.namaPembeli.size() <= 100 &&
@@ -106,17 +104,15 @@ service cloud.firestore {
           request.resource.data.isiTestimoni.size() <= 500 &&
           request.resource.data.rating is int &&
           request.resource.data.rating >= 1 &&
-          request.resource.data.rating <= 5 &&
-          (!('namaBarang' in request.resource.data) || request.resource.data.namaBarang is string) &&
-          (!('fotoUrl' in request.resource.data) || request.resource.data.fotoUrl is string)
+          request.resource.data.rating <= 5
         ) ||
         (isAuthenticated() && isAdmin())
       );
 
       allow update, delete: if isAuthenticated() && isAdmin();
     }
-    
-    // Blokir total akses untuk koleksi liar lainnya
+
+    // Blokir total akses untuk koleksi lainnya
     match /{document=**} {
       allow read, write: if false;
     }
