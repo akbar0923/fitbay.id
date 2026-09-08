@@ -33,6 +33,10 @@ export function WithdrawalProvider({ children }) {
   const addWithdrawal = async (data) => {
     try {
       const saved = await addWithdrawalDoc(data);
+      setWithdrawals((prev) => {
+        if (prev.some((w) => w.id === saved.id)) return prev;
+        return [saved, ...prev];
+      });
       toast.success(`Penarikan untuk "${saved.recipientName}" berhasil dicatat!`);
       return saved;
     } catch (err) {
@@ -45,6 +49,7 @@ export function WithdrawalProvider({ children }) {
   const updateWithdrawal = async (id, data) => {
     try {
       const updated = await updateWithdrawalDoc(id, data);
+      setWithdrawals((prev) => prev.map((w) => (w.id === id ? { ...w, ...updated } : w)));
       toast.success('Data penarikan berhasil diperbarui!');
       return updated;
     } catch (err) {
@@ -57,6 +62,7 @@ export function WithdrawalProvider({ children }) {
   const deleteWithdrawal = async (id) => {
     try {
       await deleteWithdrawalDoc(id);
+      setWithdrawals((prev) => prev.filter((w) => w.id !== id));
       toast.success('Data penarikan berhasil dihapus!');
     } catch (err) {
       console.error('Error deleting withdrawal:', err);
@@ -73,7 +79,7 @@ export function WithdrawalProvider({ children }) {
       map[key] = (map[key] || 0) + (Number(w.amount) || 0);
 
       // Jika ada ownerName spesifik, petakan juga ke owner_
-      if (w.ownerName && w.ownerName !== 'Semua Pemilik') {
+      if (w.ownerName && w.ownerName !== 'Semua Pemilik' && w.ownerName !== 'Semua Penitip Eksternal') {
         const ownerK = `owner_${w.ownerName.toLowerCase().trim()}`;
         map[ownerK] = (map[ownerK] || 0) + (Number(w.amount) || 0);
       }
@@ -89,18 +95,36 @@ export function WithdrawalProvider({ children }) {
   const getTotalWithdrawnByOwner = (ownerName) => {
     if (!ownerName) return 0;
     const cleanName = ownerName.trim().toLowerCase();
+    const isAkbar = cleanName === 'akbar' || cleanName === 'muhbar';
+    const isNesa = cleanName === 'nesa' || cleanName === 'nessa';
     
     return withdrawals.reduce((sum, w) => {
       const wOwner = (w.ownerName || '').trim().toLowerCase();
       const wKey = (w.recipientKey || '').trim().toLowerCase();
 
-      // Cek apakah penarikan ini ditujukan untuk ownerName ini
-      if (
+      let match = (
         wOwner === cleanName ||
         wKey === `owner_${cleanName}` ||
         wKey === cleanName ||
         (wKey.startsWith('owner_') && wKey.includes(cleanName))
-      ) {
+      );
+
+      if (isAkbar && (
+        wOwner === 'akbar' || wOwner === 'muhbar' ||
+        wKey === 'akbar' || wKey === 'muhbar' ||
+        wKey === 'owner_akbar' || wKey === 'owner_muhbar'
+      )) {
+        match = true;
+      }
+      if (isNesa && (
+        wOwner === 'nesa' || wOwner === 'nessa' ||
+        wKey === 'nesa' || wKey === 'nessa' ||
+        wKey === 'owner_nesa' || wKey === 'owner_nessa'
+      )) {
+        match = true;
+      }
+
+      if (match) {
         return sum + (Number(w.amount) || 0);
       }
       return sum;
@@ -113,21 +137,42 @@ export function WithdrawalProvider({ children }) {
    * @returns {number}
    */
   const getTotalWithdrawn = (recipientKey) => {
-    const key = (recipientKey || '').toLowerCase();
+    const rawKey = (recipientKey || '').toLowerCase().trim();
+    let key = rawKey;
+    if (key === 'nessa') key = 'nesa';
+    if (key === 'muhbar') key = 'akbar';
+    if (key === 'operasional') key = 'operational';
+
     const teamKeys = ['akbar', 'nesa', 'andin', 'ritza'];
     
     // Jika untuk anggota tim, gabungkan seluruh penarikan akun tersebut
     if (teamKeys.includes(key)) {
       return withdrawals.reduce((sum, w) => {
-        const wKey = (w.recipientKey || '').toLowerCase();
-        const wOwner = (w.ownerName || '').toLowerCase();
-        if (
+        const wKey = (w.recipientKey || '').toLowerCase().trim();
+        const wOwner = (w.ownerName || '').toLowerCase().trim();
+        const wRecName = (w.recipientName || '').toLowerCase().trim();
+
+        const matchTeam =
           wKey === key ||
           wKey === `owner_${key}` ||
           wOwner === key ||
-          (key === 'nesa' && (wKey === 'nessa' || wOwner === 'nessa' || wKey === 'owner_nessa')) ||
-          (key === 'akbar' && (wKey === 'muhbar' || wOwner === 'muhbar' || wKey === 'owner_muhbar'))
-        ) {
+          wRecName === key ||
+          (key === 'nesa' && (
+            wKey === 'nessa' || wOwner === 'nessa' || wKey === 'owner_nessa' ||
+            wOwner === 'nesa' || wKey === 'owner_nesa' || wRecName.includes('nesa') || wRecName.includes('nessa')
+          )) ||
+          (key === 'akbar' && (
+            wKey === 'muhbar' || wOwner === 'muhbar' || wKey === 'owner_muhbar' ||
+            wOwner === 'akbar' || wKey === 'owner_akbar' || wRecName.includes('akbar') || wRecName.includes('muhbar')
+          )) ||
+          (key === 'andin' && (
+            wKey === 'andin' || wOwner === 'andin' || wKey === 'owner_andin' || wRecName.includes('andin')
+          )) ||
+          (key === 'ritza' && (
+            wKey === 'ritza' || wOwner === 'ritza' || wKey === 'owner_ritza' || wRecName.includes('ritza')
+          ));
+
+        if (matchTeam) {
           return sum + (Number(w.amount) || 0);
         }
         return sum;
@@ -137,16 +182,18 @@ export function WithdrawalProvider({ children }) {
     // Jika 'pemilikBarang', hanya gabungkan penarikan untuk pemilik barang EKSTERNAL (non-tim)
     if (key === 'pemilikbarang') {
       return withdrawals.reduce((sum, w) => {
-        const wKey = (w.recipientKey || '').toLowerCase();
-        const wOwner = (w.ownerName || '').toLowerCase();
+        const wKey = (w.recipientKey || '').toLowerCase().trim();
+        const wOwner = (w.ownerName || '').toLowerCase().trim();
         const isTeam =
           teamKeys.includes(wKey) ||
           teamKeys.some((tk) => wKey === `owner_${tk}`) ||
+          wKey === 'nessa' || wKey === 'owner_nessa' ||
+          wKey === 'muhbar' || wKey === 'owner_muhbar' ||
           teamKeys.includes(wOwner) ||
           wOwner === 'nessa' ||
           wOwner === 'muhbar';
 
-        if (isTeam || wKey === 'operational') {
+        if (isTeam || wKey === 'operational' || wKey === 'operasional') {
           return sum;
         }
 
@@ -154,7 +201,8 @@ export function WithdrawalProvider({ children }) {
           wKey === 'pemilikbarang' || 
           wKey.startsWith('owner_') || 
           w.recipientCategory === 'owner' ||
-          (w.ownerName && w.ownerName.length > 0 && w.ownerName !== 'Semua Pemilik');
+          w.recipientCategory === 'external_owner' ||
+          (w.ownerName && w.ownerName.length > 0 && w.ownerName !== 'Semua Pemilik' && w.ownerName !== 'Semua Penitip Eksternal');
         
         if (isOwnerCategory) {
           return sum + (Number(w.amount) || 0);
@@ -163,7 +211,18 @@ export function WithdrawalProvider({ children }) {
       }, 0);
     }
 
-    return totalWithdrawnByRecipient[key] || 0;
+    // Operasional
+    if (key === 'operational' || key === 'operasional') {
+      return withdrawals.reduce((sum, w) => {
+        const wKey = (w.recipientKey || '').toLowerCase().trim();
+        if (wKey === 'operational' || wKey === 'operasional') {
+          return sum + (Number(w.amount) || 0);
+        }
+        return sum;
+      }, 0);
+    }
+
+    return totalWithdrawnByRecipient[key] || totalWithdrawnByRecipient[rawKey] || 0;
   };
 
   /**

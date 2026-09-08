@@ -45,11 +45,18 @@ export default function Withdrawals() {
   // =========================================================================
   const { teamPersonalGoods, externalOwnerBalances, externalTotalEarned } = useMemo(() => {
     // Inisialisasi akumulasi barang pribadi anggota tim (Akbar, Nesa, Andin, Ritza)
+    const akbarObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
+    const nesaObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
+    const andinObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
+    const ritzaObj = { earned: 0, totalItems: 0, totalRevenue: 0 };
+
     const teamGoods = {
-      akbar: { earned: 0, totalItems: 0, totalRevenue: 0 },
-      nesa: { earned: 0, totalItems: 0, totalRevenue: 0 },
-      andin: { earned: 0, totalItems: 0, totalRevenue: 0 },
-      ritza: { earned: 0, totalItems: 0, totalRevenue: 0 },
+      akbar: akbarObj,
+      muhbar: akbarObj,
+      nesa: nesaObj,
+      nessa: nesaObj,
+      andin: andinObj,
+      ritza: ritzaObj,
     };
 
     // Inisialisasi daftar pemilik eksternal dari master owners
@@ -74,23 +81,27 @@ export default function Withdrawals() {
 
     let extEarnedSum = 0;
 
-    // Iterasi seluruh transaksi yang statusnya Terjual
-    transactions.forEach((tx) => {
-      if (tx.status !== 'Terjual') return;
-
-      const rawOwner = (tx.ownerName || tx.owner || 'Akbar').trim();
+    // Helper untuk memproses satu item penjualan
+    const processSoldItem = (ownerRawName, sellingPrice, profit, psPemilikBarang, customScheme) => {
+      const rawOwner = (ownerRawName || 'Akbar').trim();
       const lowerOwner = rawOwner.toLowerCase();
       const teamKey = getTeamMemberKey(lowerOwner);
-      const defaultOwnerPct = profitSharingConfig?.pemilikBarang?.percentage || 70;
-      const ownerShare = tx.profitSharing?.pemilikBarang !== undefined
-        ? Number(tx.profitSharing.pemilikBarang)
-        : (Number(tx.profit || 0) * defaultOwnerPct) / 100;
+
+      const defaultOwnerPct = customScheme?.pemilikBarang !== undefined
+        ? Number(customScheme.pemilikBarang)
+        : (profitSharingConfig?.pemilikBarang?.percentage || 70);
+
+      const ownerShare = psPemilikBarang !== undefined
+        ? Number(psPemilikBarang)
+        : (Number(profit || 0) * defaultOwnerPct) / 100;
+
+      const itemRev = Number(sellingPrice) || 0;
 
       if (teamKey && teamGoods[teamKey]) {
         // 1. Jika pemilik barang adalah ANGGOTA TIM -> masuk ke saldo barang pribadi tim
         teamGoods[teamKey].earned += Math.round(ownerShare);
         teamGoods[teamKey].totalItems += 1;
-        teamGoods[teamKey].totalRevenue += Number(tx.sellingPrice) || 0;
+        teamGoods[teamKey].totalRevenue += itemRev;
       } else {
         // 2. Jika pemilik barang adalah PENITIP EKSTERNAL -> masuk ke saldo pemilik eksternal
         extEarnedSum += Math.round(ownerShare);
@@ -108,7 +119,30 @@ export default function Withdrawals() {
 
         extMap[lowerOwner].earned += Math.round(ownerShare);
         extMap[lowerOwner].totalItems += 1;
-        extMap[lowerOwner].totalRevenue += Number(tx.sellingPrice) || 0;
+        extMap[lowerOwner].totalRevenue += itemRev;
+      }
+    };
+
+    // Iterasi seluruh transaksi yang statusnya Terjual
+    transactions.forEach((tx) => {
+      if (tx.status !== 'Terjual') return;
+
+      if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        tx.items.forEach((item) => {
+          const itemOwner = item.ownerName || tx.ownerName;
+          const itemSelling = item.sellingPrice;
+          const itemProfit = item.profit;
+          const itemPs = item.profitSharing?.pemilikBarang;
+          const itemCustom = item.skemaCustom || tx.skemaCustom || tx.ownerCustomScheme;
+          processSoldItem(itemOwner, itemSelling, itemProfit, itemPs, itemCustom);
+        });
+      } else {
+        const rawOwner = tx.ownerName || tx.owner;
+        const selling = tx.sellingPrice;
+        const profit = tx.profit;
+        const ps = tx.profitSharing?.pemilikBarang;
+        const custom = tx.skemaCustom || tx.ownerCustomScheme;
+        processSoldItem(rawOwner, selling, profit, ps, custom);
       }
     });
 
@@ -131,7 +165,7 @@ export default function Withdrawals() {
       externalOwnerBalances: extList,
       externalTotalEarned: extEarnedSum,
     };
-  }, [transactions, owners, getTotalWithdrawnByOwner]);
+  }, [transactions, owners, profitSharingConfig, getTotalWithdrawnByOwner]);
 
   // Daftar opsi penerima penarikan dari profitSharingConfig
   const recipientOptions = useMemo(() => {
@@ -410,11 +444,15 @@ export default function Withdrawals() {
     }
 
     // Team Member / Operational
+    // Team Member / Operational
     const teamKey = formData.recipientKey;
-    if (teamKey === 'operational') {
-      const earned = totalStandardSharing.operational || 0;
+    if (teamKey === 'operational' || teamKey === 'operasional') {
+      const earned = totalStandardSharing.operational || totalStandardSharing.operasional || 0;
       const withdrawn = getTotalWithdrawn('operational');
-      const editingComp = editingItem && editingItem.recipientKey === 'operational' ? Number(editingItem.amount) : 0;
+      const editingComp =
+        editingItem && (editingItem.recipientKey === 'operational' || editingItem.recipientKey === 'operasional')
+          ? Number(editingItem.amount)
+          : 0;
       const remaining = Math.max(0, earned - (withdrawn - editingComp));
       return {
         totalEarned: earned,
@@ -427,13 +465,19 @@ export default function Withdrawals() {
     }
 
     // Individual Team Members (Akbar, Nesa, Andin, Ritza)
-    const commissionEarned = totalStandardSharing[teamKey] || 0;
-    const personalGoodsEarned = teamPersonalGoods[teamKey]?.earned || 0;
+    const normalizedKey = getTeamMemberKey(teamKey) || teamKey;
+    const commissionEarned = totalStandardSharing[teamKey] || totalStandardSharing[normalizedKey] || 0;
+    const personalGoodsEarned = teamPersonalGoods[teamKey]?.earned || teamPersonalGoods[normalizedKey]?.earned || 0;
     const totalCombinedEarned = commissionEarned + personalGoodsEarned;
 
     const withdrawn = getTotalWithdrawn(teamKey);
     const editingComp =
-      editingItem && (editingItem.recipientKey === teamKey || editingItem.recipientKey === `owner_${teamKey}`)
+      editingItem && (
+        editingItem.recipientKey === teamKey ||
+        editingItem.recipientKey === normalizedKey ||
+        editingItem.recipientKey === `owner_${teamKey}` ||
+        editingItem.recipientKey === `owner_${normalizedKey}`
+      )
         ? Number(editingItem.amount)
         : 0;
 
@@ -473,12 +517,19 @@ export default function Withdrawals() {
   );
   const totalAllRounding = withdrawals.reduce((sum, w) => sum + (Number(w.roundingAmount) || 0), 0);
 
+  const soldTransactions = useMemo(() => {
+    return transactions.filter((t) => t.status === 'Terjual');
+  }, [transactions]);
+
+  // Total omset kotor seluruh penjualan terjual
+  const totalGrossRevenue = useMemo(() => {
+    return soldTransactions.reduce((sum, t) => sum + (Number(t.sellingPrice) || 0), 0);
+  }, [soldTransactions]);
+
   // Total keuntungan bisnis & penitip dari transaksi terjual
   const totalOverallEarned = useMemo(() => {
-    return transactions
-      .filter((t) => t.status === 'Terjual')
-      .reduce((sum, t) => sum + (Number(t.profit) || 0), 0);
-  }, [transactions]);
+    return soldTransactions.reduce((sum, t) => sum + (Number(t.profit) || 0), 0);
+  }, [soldTransactions]);
 
   // Total Saldo Belum Ditarik Secara Keseluruhan (Sisa Kas / Hak Belum Cair)
   const totalOverallRemaining = Math.max(0, totalOverallEarned - totalAllWithdrawn);
@@ -592,7 +643,7 @@ export default function Withdrawals() {
         <div className="dark:bg-surface-200 bg-white border dark:border-white/5 border-gray-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
           <div>
             <span className="text-xs font-bold dark:text-gray-400 text-gray-500 uppercase tracking-wider block mb-1">
-              Total Uang Masuk (Omset Penjualan)
+              Total Keuntungan Hak Siap Bagi
             </span>
             <p className="text-2xl lg:text-3xl font-extrabold dark:text-white text-gray-900 tracking-tight">
               {formatCurrency(totalOverallEarned)}
@@ -600,7 +651,7 @@ export default function Withdrawals() {
           </div>
           <p className="text-xs dark:text-gray-500 text-gray-400 mt-2 flex items-center gap-1">
             <span>📥</span>
-            <span>Seluruh uang masuk dari pembeli (39 transaksi)</span>
+            <span>Total dari {soldTransactions.length} transaksi terjual (Omset: {formatCurrency(totalGrossRevenue)})</span>
           </p>
         </div>
 
@@ -654,7 +705,8 @@ export default function Withdrawals() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {recipientOptions.map((rec) => {
             const isOwnerCard = rec.key === 'pemilikBarang';
-            const isTeamMember = TEAM_MEMBER_KEYS.includes(rec.key);
+            const normalizedTeamKey = getTeamMemberKey(rec.key);
+            const isTeamMember = TEAM_MEMBER_KEYS.includes(rec.key) || Boolean(normalizedTeamKey);
 
             // 1. Jika kartu Pemilik Barang -> Khusus Penitip Eksternal (Non-Tim)
             let earned = 0;
@@ -670,16 +722,17 @@ export default function Withdrawals() {
               remaining = Math.max(0, earned - withdrawn);
             } else if (isTeamMember) {
               // 2. Jika kartu Anggota Tim -> Gabungan Komisi Tim (5%) + Keuntungan Barang Pribadi (70%)
-              commissionEarned = totalStandardSharing[rec.key] || 0;
-              personalGoodsEarned = teamPersonalGoods[rec.key]?.earned || 0;
-              personalItemsCount = teamPersonalGoods[rec.key]?.totalItems || 0;
+              const lookupKey = normalizedTeamKey || rec.key;
+              commissionEarned = totalStandardSharing[rec.key] || totalStandardSharing[lookupKey] || 0;
+              personalGoodsEarned = teamPersonalGoods[rec.key]?.earned || teamPersonalGoods[lookupKey]?.earned || 0;
+              personalItemsCount = teamPersonalGoods[rec.key]?.totalItems || teamPersonalGoods[lookupKey]?.totalItems || 0;
               earned = commissionEarned + personalGoodsEarned;
 
               withdrawn = getTotalWithdrawn(rec.key);
               remaining = Math.max(0, earned - withdrawn);
             } else {
               // 3. Operasional (10%)
-              earned = totalStandardSharing[rec.key] || 0;
+              earned = totalStandardSharing[rec.key] || totalStandardSharing.operational || 0;
               withdrawn = getTotalWithdrawn(rec.key);
               remaining = Math.max(0, earned - withdrawn);
             }

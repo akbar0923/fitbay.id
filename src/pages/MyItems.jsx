@@ -11,6 +11,7 @@ import InventoryDetailModal from '../components/inventory/InventoryDetailModal';
 import InventoryFormModal from '../components/inventory/InventoryFormModal';
 import SalesFormModal from '../components/sales/SalesFormModal';
 import { calculateOrderTotals } from '../utils/calculateProfitSharing';
+import { getTeamMemberKey } from '../constants/profitSharingConfig';
 import toast from 'react-hot-toast';
 
 export default function MyItems() {
@@ -208,12 +209,13 @@ export default function MyItems() {
 
   // Total penarikan saldo yang sudah pernah dicairkan atas nama akun ini
   const totalWithdrawn = useMemo(() => {
-    let sum = 0;
-    userIdentifiers.forEach((id) => {
-      sum += getTotalWithdrawn(id);
-      sum += getTotalWithdrawnByOwner(id);
-    });
-    return sum;
+    const primary = userIdentifiers[0];
+    if (!primary) return 0;
+    const teamKey = getTeamMemberKey(primary);
+    if (teamKey) {
+      return getTotalWithdrawn(teamKey);
+    }
+    return getTotalWithdrawnByOwner(primary);
   }, [userIdentifiers, getTotalWithdrawn, getTotalWithdrawnByOwner]);
 
   // Sisa saldo bersih yang siap ditarik (setelah dikurangi penarikan)

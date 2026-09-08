@@ -1,4 +1,4 @@
-import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
+import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig.js';
 
 /**
  * Normalisasi akses nilai profit sharing terhadap perbedaan penamaan kunci lama (alias)
@@ -61,6 +61,19 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
         Object.keys(configToUse).forEach((key) => {
           totals[key] += getPsValue(tx.profitSharing, key);
         });
+      } else if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        tx.items.forEach((it) => {
+          if (it.profitSharing) {
+            Object.keys(configToUse).forEach((key) => {
+              totals[key] += getPsValue(it.profitSharing, key);
+            });
+          } else if (it.profit > 0) {
+            Object.entries(configToUse).forEach(([key, config]) => {
+              const pct = typeof config === 'object' ? Number(config.percentage) || 0 : Number(config) || 0;
+              totals[key] += Math.round((Number(it.profit) * pct) / 100);
+            });
+          }
+        });
       } else if (tx.profit > 0) {
         // Fallback hitung on the fly jika profitSharing belum tersimpan
         Object.entries(configToUse).forEach(([key, config]) => {
@@ -70,6 +83,27 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
       }
     }
   });
+
+  // Mirror aliases so either key works seamlessly
+  if (totals.nesa !== undefined && totals.nessa !== undefined) {
+    const maxNesa = Math.max(totals.nesa, totals.nessa);
+    totals.nesa = maxNesa;
+    totals.nessa = maxNesa;
+  } else if (totals.nesa !== undefined) {
+    totals.nessa = totals.nesa;
+  } else if (totals.nessa !== undefined) {
+    totals.nesa = totals.nessa;
+  }
+
+  if (totals.operational !== undefined && totals.operasional !== undefined) {
+    const maxOps = Math.max(totals.operational, totals.operasional);
+    totals.operational = maxOps;
+    totals.operasional = maxOps;
+  } else if (totals.operational !== undefined) {
+    totals.operasional = totals.operational;
+  } else if (totals.operasional !== undefined) {
+    totals.operational = totals.operasional;
+  }
 
   return totals;
 }
@@ -92,9 +126,16 @@ export function calculateItemProfitAndSharing(item, globalConfig = PROFIT_SHARIN
   if (customScheme) {
     schemeToUse = {};
     Object.keys(configToUse).forEach((k) => {
+      let pct = customScheme[k];
+      if (pct === undefined) {
+        if (k === 'nesa' && customScheme.nessa !== undefined) pct = customScheme.nessa;
+        if (k === 'nessa' && customScheme.nesa !== undefined) pct = customScheme.nesa;
+        if (k === 'operational' && customScheme.operasional !== undefined) pct = customScheme.operasional;
+        if (k === 'operasional' && customScheme.operational !== undefined) pct = customScheme.operational;
+      }
       schemeToUse[k] = {
         ...configToUse[k],
-        percentage: Number(customScheme[k] || 0),
+        percentage: Number(pct || 0),
       };
     });
   }

@@ -39,7 +39,7 @@ export const PROFIT_SHARING_CONFIG = {
   },
 };
 
-export const TEAM_MEMBER_KEYS = ['akbar', 'nesa', 'andin', 'ritza'];
+export const TEAM_MEMBER_KEYS = ['akbar', 'nesa', 'nessa', 'andin', 'ritza', 'muhbar'];
 
 // Preset Skema Pembagian Hasil
 export const SCHEME_PRESETS = [
