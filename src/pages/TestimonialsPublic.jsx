@@ -316,22 +316,27 @@ export default function TestimonialsPublic() {
           <p className="text-gray-400 text-sm sm:text-base leading-relaxed max-w-lg">
             Kepercayaan Anda adalah prioritas kami. Simak apa kata pelanggan setia tentang kualitas barang thrift & preloved original di <span className="text-emerald-400 font-semibold">Fitbay.id</span>.
           </p>
+        </div>
 
-          {/* Objective Real-Time Stats Grid */}
-          <div className="mt-8 w-full max-w-3xl grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        {/* Objective Real-Time Stats Grid */}
+        <div className="w-full max-w-4xl mb-10">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
             {/* Card 1: Barang Terjual */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-xl flex items-center gap-3.5 hover:border-emerald-500/40 transition-all text-left">
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl hover:border-emerald-500/30 transition-all flex items-center gap-4 shadow-sm text-left">
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-2xl shrink-0">
                 📦
               </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-white">
-                  {objectiveStats.totalBarangTerjual > 0
-                    ? `${objectiveStats.totalBarangTerjual} Barang`
-                    : `${testimonials.length} Terjual`}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {objectiveStats.totalBarangTerjual || 0}
+                  </span>
+                  <span className="text-xs sm:text-sm font-bold text-gray-400">Barang</span>
                 </div>
-                <div className="text-xs text-gray-400 font-medium">Barang Berhasil Terjual</div>
-                <div className="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
+                <div className="text-xs text-gray-400 font-medium mt-0.5 whitespace-nowrap">
+                  Barang Berhasil Terjual
+                </div>
+                <div className="text-[11px] text-emerald-400 font-medium flex items-center gap-1 mt-1 whitespace-nowrap">
                   <span>✓</span>
                   <span>Transaksi Terverifikasi</span>
                 </div>
@@ -339,18 +344,21 @@ export default function TestimonialsPublic() {
             </div>
 
             {/* Card 2: Pembeli Puas */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-xl flex items-center gap-3.5 hover:border-blue-500/40 transition-all text-left">
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl hover:border-blue-500/30 transition-all flex items-center gap-4 shadow-sm text-left">
               <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-2xl shrink-0">
                 👥
               </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-white">
-                  {objectiveStats.totalPembeliUnik > 0
-                    ? `${objectiveStats.totalPembeliUnik} Pelanggan`
-                    : `${testimonials.length} Pembeli`}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                    {objectiveStats.totalPembeliUnik || 0}
+                  </span>
+                  <span className="text-xs sm:text-sm font-bold text-gray-400">Pelanggan</span>
                 </div>
-                <div className="text-xs text-gray-400 font-medium">Pembeli Puas</div>
-                <div className="text-[10px] text-blue-400 flex items-center gap-1 mt-0.5">
+                <div className="text-xs text-gray-400 font-medium mt-0.5 whitespace-nowrap">
+                  Pembeli Puas
+                </div>
+                <div className="text-[11px] text-blue-400 font-medium flex items-center gap-1 mt-1 whitespace-nowrap">
                   <span>✓</span>
                   <span>Pelanggan Riil Fitbay.id</span>
                 </div>
@@ -358,17 +366,21 @@ export default function TestimonialsPublic() {
             </div>
 
             {/* Card 3: Rating Rata-rata */}
-            <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-xl flex items-center gap-3.5 hover:border-amber-500/40 transition-all text-left">
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-xl hover:border-amber-500/30 transition-all flex items-center gap-4 shadow-sm text-left">
               <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-2xl shrink-0">
                 ⭐
               </div>
-              <div>
-                <div className="text-xl sm:text-2xl font-black text-amber-400 flex items-center gap-1">
-                  <span>{objectiveStats.averageRating || stats.avg}</span>
-                  <span className="text-sm font-normal text-amber-400/80">/ 5.0</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl sm:text-3xl font-black text-amber-400 tracking-tight">
+                    {objectiveStats.averageRating || stats.avg}
+                  </span>
+                  <span className="text-xs sm:text-sm font-semibold text-amber-400/70">/ 5.0</span>
                 </div>
-                <div className="text-xs text-gray-400 font-medium">Rating Rata-Rata</div>
-                <div className="text-[10px] text-amber-400 flex items-center gap-1 mt-0.5">
+                <div className="text-xs text-gray-400 font-medium mt-0.5 whitespace-nowrap">
+                  Rating Rata-Rata
+                </div>
+                <div className="text-[11px] text-amber-400 font-medium flex items-center gap-1 mt-1 whitespace-nowrap">
                   <span>★</span>
                   <span>{objectiveStats.persentasePuas || stats.percentage5}% Puas Bintang 5</span>
                 </div>
@@ -377,9 +389,9 @@ export default function TestimonialsPublic() {
           </div>
 
           {/* Trust Banner & Quick Write CTA */}
-          <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3 text-xs">
-            <div className="inline-flex items-center gap-2 text-gray-400 text-[11px] bg-white/[0.03] px-3.5 py-1.5 rounded-full border border-white/5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 sm:px-5 rounded-2xl bg-white/[0.02] border border-white/5">
+            <div className="flex items-center gap-2.5 text-gray-400 text-xs text-center sm:text-left">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
               <span>Dihitung otomatis real-time dari data transaksi penjualan asli Fitbay.id</span>
             </div>
 
@@ -390,9 +402,9 @@ export default function TestimonialsPublic() {
                   document.getElementById('form-ulasan-section')?.scrollIntoView({ behavior: 'smooth' });
                 }, 100);
               }}
-              className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-black font-bold text-xs rounded-full shadow-md shadow-emerald-500/20 transition-all flex items-center gap-1.5"
+              className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/30 transition-all flex items-center gap-1.5 shrink-0"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               <span>Tulis Ulasan</span>
