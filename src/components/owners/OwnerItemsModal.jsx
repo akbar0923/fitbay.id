@@ -53,6 +53,13 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
         }
       }
 
+      let itemTxData = null;
+      if (linkedTx?.items && Array.isArray(linkedTx.items)) {
+        itemTxData = linkedTx.items.find(
+          (it) => it.inventoryItemId === item.id || (it.kodeBarang && it.kodeBarang === item.kodeBarang)
+        );
+      }
+
       if (linkedTx) {
         processedTxIds.add(linkedTx.id);
       }
@@ -60,9 +67,13 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
         processedCodes.add(item.kodeBarang.toLowerCase());
       }
 
-      const hakPemilik = linkedTx?.profitSharing?.pemilikBarang !== undefined
+      const hakPemilik = itemTxData?.profitSharing?.pemilikBarang !== undefined
+        ? Number(itemTxData.profitSharing.pemilikBarang) || 0
+        : linkedTx?.profitSharing?.pemilikBarang !== undefined
         ? Number(linkedTx.profitSharing.pemilikBarang) || 0
         : Number(item.hargaModal) || 0;
+
+      const sellingPrice = itemTxData?.sellingPrice || linkedTx?.sellingPrice || item.hargaJual || 0;
 
       result.push({
         id: item.id,
@@ -74,14 +85,46 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
         tanggalMasuk: item.tanggalMasuk || item.createdAt || '-',
         tanggalTerjual: item.tanggalTerjual || linkedTx?.date || null,
         hargaModal: Number(item.hargaModal) || 0,
-        sellingPrice: linkedTx?.sellingPrice || item.hargaJual || 0,
-        hakPemilik: hakPemilik,
+        sellingPrice,
+        hakPemilik,
         source: 'inventory',
       });
     });
 
     // 2. Ambil dari transaksi penjualan langsung yang belum ada di inventory (Hanya milik pemilik ini)
     transactions.forEach((tx) => {
+      if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        tx.items.forEach((it, idx) => {
+          if (it.inventoryItemId && items.some((i) => i.id === it.inventoryItemId)) return;
+          if (it.kodeBarang && processedCodes.has(it.kodeBarang.toLowerCase())) return;
+          if (!matchesOwner(it.ownerName)) return;
+
+          const defaultOwnerPct = owner?.isCustomScheme && owner?.customScheme
+            ? Number(owner.customScheme.pemilikBarang || 85)
+            : (profitSharingConfig?.pemilikBarang?.percentage || 70);
+
+          const hakPemilik = it.profitSharing?.pemilikBarang !== undefined
+            ? Number(it.profitSharing.pemilikBarang) || 0
+            : Math.round(((Number(it.profit) || 0) * defaultOwnerPct) / 100);
+
+          result.push({
+            id: `tx_${tx.id}_${it.id || idx}`,
+            kodeBarang: it.kodeBarang || 'TX-LANGSUNG',
+            namaBarang: it.itemName || 'Barang Terjual',
+            kategori: it.category || 'Baju',
+            catatan: tx.catatanPengiriman || 'Penjualan Langsung',
+            status: 'Terjual',
+            tanggalMasuk: tx.date || '-',
+            tanggalTerjual: tx.date || '-',
+            hargaModal: Number(it.costPrice || 0),
+            sellingPrice: Number(it.sellingPrice) || 0,
+            hakPemilik,
+            source: 'transaction',
+          });
+        });
+        return;
+      }
+
       if (processedTxIds.has(tx.id)) return;
       if (tx.inventoryItemId && items.some((i) => i.id === tx.inventoryItemId)) return;
       if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
@@ -102,11 +145,11 @@ export default function OwnerItemsModal({ isOpen, onClose, owner }) {
         kodeBarang: tx.kodeBarang || 'TX-LANGSUNG',
         namaBarang: tx.itemName || 'Barang Terjual',
         kategori: tx.category || 'Baju',
-        catatan: tx.notes || 'Penjualan Langsung',
+        catatan: tx.catatanPengiriman || 'Penjualan Langsung',
         status: 'Terjual',
         tanggalMasuk: tx.date || '-',
         tanggalTerjual: tx.date || '-',
-        hargaModal: 0,
+        hargaModal: Number(tx.costPrice || 0),
         sellingPrice: Number(tx.sellingPrice) || 0,
         hakPemilik: hakPemilik,
         source: 'transaction',

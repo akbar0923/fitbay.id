@@ -270,7 +270,7 @@ export default function Inventory() {
       category: item.kategori,
       ownerName: item.pemilikBarang,
       costPrice: item.hargaModal,
-      sellingPrice: item.sellingPrice || '',
+      sellingPrice: item.hargaJual || item.sellingPrice || '',
       paymentMethod: item.paymentMethod || 'Transfer Bank',
       sumberPesanan: item.sumberPesanan || 'WhatsApp',
       status: 'Terjual',
@@ -561,6 +561,7 @@ export default function Inventory() {
                 <th className="px-4 py-4 font-semibold">Kategori</th>
                 <th className="px-4 py-4 font-semibold">Pemilik Barang</th>
                 <th className="px-4 py-4 font-semibold">Harga Modal</th>
+                <th className="px-4 py-4 font-semibold">Harga Jual</th>
                 <th className="px-4 py-4 font-semibold">Status</th>
                 <th className="px-4 py-4 font-semibold text-right">Aksi</th>
               </tr>
@@ -568,7 +569,7 @@ export default function Inventory() {
             <tbody className="divide-y dark:divide-white/5 divide-gray-200">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12">
+                  <td colSpan={9} className="px-6 py-12">
                     <EmptyState
                       icon="📦"
                       title="Belum Ada Data Barang"
@@ -654,6 +655,15 @@ export default function Inventory() {
                       {/* Harga Modal */}
                       <td className="px-4 py-4 whitespace-nowrap font-medium text-xs dark:text-gray-300 text-gray-700">
                         {formatCurrency(item.hargaModal)}
+                      </td>
+
+                      {/* Harga Jual */}
+                      <td className="px-4 py-4 whitespace-nowrap font-bold text-xs text-accent">
+                        {item.hargaJual || item.sellingPrice ? (
+                          formatCurrency(item.hargaJual || item.sellingPrice)
+                        ) : (
+                          <span className="dark:text-gray-500 text-gray-400 font-normal">-</span>
+                        )}
                       </td>
 
                       {/* Status */}

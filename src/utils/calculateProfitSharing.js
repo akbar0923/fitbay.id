@@ -73,3 +73,81 @@ export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARIN
 
   return totals;
 }
+
+/**
+ * Menghitung keuntungan dan pembagian hasil untuk satu item spesifik
+ * @param {object} item - Objek barang ({ sellingPrice, costPrice, skemaCustom })
+ * @param {object} [globalConfig] - Konfigurasi global persentase bagi hasil
+ * @returns {object} { profit, sharing }
+ */
+export function calculateItemProfitAndSharing(item, globalConfig = PROFIT_SHARING_CONFIG) {
+  const selling = Number(item.sellingPrice || 0);
+  const cost = Number(item.costPrice || 0);
+  const profit = selling - cost;
+
+  const configToUse = globalConfig || PROFIT_SHARING_CONFIG;
+  let schemeToUse = configToUse;
+  const customScheme = item.skemaCustom || item.ownerCustomScheme;
+
+  if (customScheme) {
+    schemeToUse = {};
+    Object.keys(configToUse).forEach((k) => {
+      schemeToUse[k] = {
+        ...configToUse[k],
+        percentage: Number(customScheme[k] || 0),
+      };
+    });
+  }
+
+  const { sharing } = calculateProfitSharing(selling, cost, schemeToUse);
+  return { profit, sharing };
+}
+
+/**
+ * Menghitung akumulasi total penjualan, modal, laba, dan bagi hasil dari array items
+ * @param {Array} items - Array of item objects
+ * @param {object} [globalConfig] - Konfigurasi global persentase bagi hasil
+ * @returns {object} { totalSelling, totalCost, totalProfit, totalSharing, calculatedItems }
+ */
+export function calculateOrderTotals(items = [], globalConfig = PROFIT_SHARING_CONFIG) {
+  const configToUse = globalConfig || PROFIT_SHARING_CONFIG;
+  let totalSelling = 0;
+  let totalCost = 0;
+  let totalProfit = 0;
+  const totalSharing = {};
+
+  Object.keys(configToUse).forEach((key) => {
+    totalSharing[key] = 0;
+  });
+
+  const calculatedItems = (items || []).map((item) => {
+    const selling = Number(item.sellingPrice || 0);
+    const cost = Number(item.costPrice || 0);
+    const { profit, sharing } = calculateItemProfitAndSharing(item, configToUse);
+
+    totalSelling += selling;
+    totalCost += cost;
+    totalProfit += profit;
+
+    Object.keys(configToUse).forEach((key) => {
+      totalSharing[key] += getPsValue(sharing, key);
+    });
+
+    return {
+      ...item,
+      sellingPrice: selling,
+      costPrice: cost,
+      profit,
+      profitSharing: sharing,
+    };
+  });
+
+  return {
+    totalSelling,
+    totalCost,
+    totalProfit,
+    totalSharing,
+    calculatedItems,
+  };
+}
+

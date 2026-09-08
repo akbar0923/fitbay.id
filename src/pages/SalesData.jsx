@@ -11,7 +11,7 @@ import Button from '../components/ui/Button';
 
 export default function SalesData() {
   const { addTransaction, addTransactionsBatch, updateTransaction, deleteTransaction } = useSales();
-  const { markAsSold, items } = useInventory();
+  const { markAsSold, restoreToUnsold, items } = useInventory();
   const { isAdmin } = useAuth();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -35,40 +35,110 @@ export default function SalesData() {
     setIsDeleteOpen(true);
   };
 
+  // Kumpulkan semua ID inventaris dari payload transaksi multi-barang / single-barang
+  const resolveTargetInventoryItems = (formData) => {
+    const list = [];
+    if (formData.items && Array.isArray(formData.items) && formData.items.length > 0) {
+      formData.items.forEach((it) => {
+        let invId = it.inventoryItemId;
+        if (!invId && it.kodeBarang) {
+          const found = items.find(
+            (i) => (i.kodeBarang || '').toLowerCase() === it.kodeBarang.trim().toLowerCase()
+          );
+          if (found) invId = found.id;
+        }
+        if (invId) {
+          list.push({
+            invId,
+            sellingPrice: Number(it.sellingPrice || 0),
+          });
+        }
+      });
+    } else {
+      let invId = formData.inventoryItemId;
+      if (!invId && formData.kodeBarang) {
+        const found = items.find(
+          (i) => (i.kodeBarang || '').toLowerCase() === formData.kodeBarang.trim().toLowerCase()
+        );
+        if (found) invId = found.id;
+      }
+      if (invId) {
+        list.push({
+          invId,
+          sellingPrice: Number(formData.sellingPrice || 0),
+        });
+      }
+    }
+    return list;
+  };
+
   const handleFormSubmit = async (formData) => {
+    const targetInventoryList = resolveTargetInventoryItems(formData);
+
     if (editingTransaction) {
       await updateTransaction(editingTransaction.id, {
         ...editingTransaction,
         ...formData,
       });
 
-      // Update referensi inventaris jika ada
-      const targetInvId = formData.inventoryItemId || editingTransaction.inventoryItemId;
-      if (targetInvId) {
-        await markAsSold(targetInvId, editingTransaction.id, {
-          sellingPrice: Number(formData.sellingPrice || 0),
-          paymentMethod: formData.paymentMethod || 'Transfer Bank',
-          sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+      // Cari item lama yang dilepas saat edit agar statusnya dikembalikan ke Belum Terjual
+      const oldInvIds = [];
+      if (editingTransaction.items && Array.isArray(editingTransaction.items)) {
+        editingTransaction.items.forEach((it) => {
+          if (it.inventoryItemId) oldInvIds.push(it.inventoryItemId);
         });
+      } else if (editingTransaction.inventoryItemId) {
+        oldInvIds.push(editingTransaction.inventoryItemId);
+      }
+
+      const currentIdsSet = new Set(targetInventoryList.map((t) => t.invId));
+      for (const oldId of oldInvIds) {
+        if (!currentIdsSet.has(oldId)) {
+          try {
+            await restoreToUnsold(oldId);
+          } catch (err) {
+            console.warn('Error restoring unlinked inventory item:', err);
+          }
+        }
+      }
+
+      // Update seluruh item inventaris yang masih terhubung
+      for (const target of targetInventoryList) {
+        try {
+          await markAsSold(target.invId, editingTransaction.id, {
+            sellingPrice: target.sellingPrice,
+            paymentMethod: formData.paymentMethod || 'Transfer Bank',
+            sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+            namaPenerima: formData.namaPenerima || '',
+            noHpPenerima: formData.noHpPenerima || '',
+            alamatPenerima: formData.alamatPenerima || '',
+            ekspedisi: formData.ekspedisi || 'J&T Express',
+            resi: formData.resi || '',
+          });
+        } catch (invErr) {
+          console.warn('Error updating inventory item to sold:', invErr);
+        }
       }
     } else {
       const newTx = await addTransaction(formData);
 
-      // Cari item inventaris berdasarkan ID atau Kode Barang
-      let targetInvId = formData.inventoryItemId;
-      if (!targetInvId && formData.kodeBarang) {
-        const found = items.find(
-          (i) => (i.kodeBarang || '').toLowerCase() === formData.kodeBarang.trim().toLowerCase()
-        );
-        if (found) targetInvId = found.id;
-      }
-
-      if (targetInvId && newTx?.id) {
-        await markAsSold(targetInvId, newTx.id, {
-          sellingPrice: Number(formData.sellingPrice || 0),
-          paymentMethod: formData.paymentMethod || 'Transfer Bank',
-          sumberPesanan: formData.sumberPesanan || 'WhatsApp',
-        });
+      if (newTx?.id && targetInventoryList.length > 0) {
+        for (const target of targetInventoryList) {
+          try {
+            await markAsSold(target.invId, newTx.id, {
+              sellingPrice: target.sellingPrice,
+              paymentMethod: formData.paymentMethod || 'Transfer Bank',
+              sumberPesanan: formData.sumberPesanan || 'WhatsApp',
+              namaPenerima: formData.namaPenerima || '',
+              noHpPenerima: formData.noHpPenerima || '',
+              alamatPenerima: formData.alamatPenerima || '',
+              ekspedisi: formData.ekspedisi || 'J&T Express',
+              resi: formData.resi || '',
+            });
+          } catch (invErr) {
+            console.warn('Error marking item as sold:', invErr);
+          }
+        }
       }
     }
   };

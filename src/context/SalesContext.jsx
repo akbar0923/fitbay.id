@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { calculateProfitSharing } from '../utils/calculateProfitSharing';
+import { calculateProfitSharing, calculateOrderTotals } from '../utils/calculateProfitSharing';
 import { PROFIT_SHARING_CONFIG } from '../constants/profitSharingConfig';
 import {
   getTransactions,
@@ -14,7 +14,7 @@ import {
   subscribeProfitSharingSettings,
   saveProfitSharingSettings,
 } from '../firebase/settingsService';
-import { restoreItemToUnsold, restoreItemsByTransactionRef } from '../firebase/inventoryService';
+import { restoreItemToUnsold, restoreItemsByTransactionRef, markItemAsSold } from '../firebase/inventoryService';
 import toast from 'react-hot-toast';
 
 const SalesContext = createContext();
@@ -150,40 +150,74 @@ export function SalesProvider({ children }) {
   // CRUD Operations — Firestore
   const addTransaction = async (data) => {
     try {
-      let schemeToUse = profitSharingConfig;
-      const customScheme = data.skemaCustom || data.ownerCustomScheme;
-      if (customScheme) {
-        schemeToUse = {};
-        Object.keys(profitSharingConfig).forEach((k) => {
-          schemeToUse[k] = {
-            ...profitSharingConfig[k],
-            percentage: Number(customScheme[k] || 0),
-          };
-        });
-      }
+      let sellingPrice = Number(data.sellingPrice || 0);
+      let costPrice = Number(data.costPrice || 0);
+      let profit = 0;
+      let sharing = {};
+      let finalItems = data.items || null;
+      let itemName = data.itemName || '';
+      let kodeBarang = data.kodeBarang || null;
+      let ownerName = data.ownerName || 'Akbar';
+      let category = data.category || 'Baju';
 
-      const { profit, sharing } = calculateProfitSharing(
-        Number(data.sellingPrice),
-        Number(data.costPrice),
-        schemeToUse
-      );
+      if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+        const totals = calculateOrderTotals(data.items, profitSharingConfig);
+        sellingPrice = totals.totalSelling;
+        costPrice = totals.totalCost;
+        profit = totals.totalProfit;
+        sharing = totals.totalSharing;
+        finalItems = totals.calculatedItems;
+
+        if (data.items.length === 1) {
+          itemName = data.items[0].itemName || itemName;
+          kodeBarang = data.items[0].kodeBarang || kodeBarang;
+          ownerName = data.items[0].ownerName || ownerName;
+          category = data.items[0].category || category;
+        } else {
+          const names = data.items.map((it) => it.itemName).filter(Boolean);
+          itemName = `${names.join(', ')} (${data.items.length} Barang)`;
+          const codes = data.items.map((it) => it.kodeBarang).filter(Boolean);
+          kodeBarang = codes.length > 0 ? codes.join(', ') : null;
+          const owners = [...new Set(data.items.map((it) => it.ownerName).filter(Boolean))];
+          ownerName = owners.length === 1 ? owners[0] : (owners.join(', ') || 'Akbar');
+          const categories = [...new Set(data.items.map((it) => it.category).filter(Boolean))];
+          category = categories.length === 1 ? categories[0] : 'Campuran';
+        }
+      } else {
+        let schemeToUse = profitSharingConfig;
+        const customScheme = data.skemaCustom || data.ownerCustomScheme;
+        if (customScheme) {
+          schemeToUse = {};
+          Object.keys(profitSharingConfig).forEach((k) => {
+            schemeToUse[k] = {
+              ...profitSharingConfig[k],
+              percentage: Number(customScheme[k] || 0),
+            };
+          });
+        }
+
+        const calc = calculateProfitSharing(sellingPrice, costPrice, schemeToUse);
+        profit = calc.profit;
+        sharing = calc.sharing;
+      }
 
       const newTransaction = {
         date: data.date,
-        itemName: data.itemName,
-        ownerName: data.ownerName || 'Akbar',
-        category: data.category || 'Baju',
-        costPrice: Number(data.costPrice || 0),
-        sellingPrice: Number(data.sellingPrice),
+        itemName,
+        ownerName,
+        category,
+        costPrice,
+        sellingPrice,
         paymentMethod: data.paymentMethod || 'Transfer Bank',
         sumberPesanan: data.sumberPesanan || 'WhatsApp',
         profit,
         status: data.status || 'Terjual',
         profitSharing: sharing,
-        ownerCustomScheme: customScheme || null,
-        skemaCustom: customScheme || null,
-        kodeBarang: data.kodeBarang || null,
-        inventoryItemId: data.inventoryItemId || null,
+        ownerCustomScheme: data.skemaCustom || data.ownerCustomScheme || null,
+        skemaCustom: data.skemaCustom || data.ownerCustomScheme || null,
+        kodeBarang: kodeBarang || null,
+        inventoryItemId: data.inventoryItemId || (finalItems?.[0]?.inventoryItemId) || null,
+        items: finalItems,
         // Data Pengiriman & Penerima
         namaPenerima: data.namaPenerima || '',
         noHpPenerima: data.noHpPenerima || '',
@@ -261,37 +295,73 @@ export function SalesProvider({ children }) {
 
   const updateTransaction = async (id, data) => {
     try {
-      let schemeToUse = profitSharingConfig;
-      const customScheme = data.skemaCustom || data.ownerCustomScheme;
-      if (customScheme) {
-        schemeToUse = {};
-        Object.keys(profitSharingConfig).forEach((k) => {
-          schemeToUse[k] = {
-            ...profitSharingConfig[k],
-            percentage: Number(customScheme[k] || 0),
-          };
-        });
-      }
+      let sellingPrice = Number(data.sellingPrice || 0);
+      let costPrice = Number(data.costPrice || 0);
+      let profit = 0;
+      let sharing = {};
+      let finalItems = data.items || null;
+      let itemName = data.itemName || '';
+      let kodeBarang = data.kodeBarang || null;
+      let ownerName = data.ownerName || 'Akbar';
+      let category = data.category || 'Baju';
 
-      const { profit, sharing } = calculateProfitSharing(
-        Number(data.sellingPrice),
-        Number(data.costPrice),
-        schemeToUse
-      );
+      if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+        const totals = calculateOrderTotals(data.items, profitSharingConfig);
+        sellingPrice = totals.totalSelling;
+        costPrice = totals.totalCost;
+        profit = totals.totalProfit;
+        sharing = totals.totalSharing;
+        finalItems = totals.calculatedItems;
+
+        if (data.items.length === 1) {
+          itemName = data.items[0].itemName || itemName;
+          kodeBarang = data.items[0].kodeBarang || kodeBarang;
+          ownerName = data.items[0].ownerName || ownerName;
+          category = data.items[0].category || category;
+        } else {
+          const names = data.items.map((it) => it.itemName).filter(Boolean);
+          itemName = `${names.join(', ')} (${data.items.length} Barang)`;
+          const codes = data.items.map((it) => it.kodeBarang).filter(Boolean);
+          kodeBarang = codes.length > 0 ? codes.join(', ') : null;
+          const owners = [...new Set(data.items.map((it) => it.ownerName).filter(Boolean))];
+          ownerName = owners.length === 1 ? owners[0] : (owners.join(', ') || 'Akbar');
+          const categories = [...new Set(data.items.map((it) => it.category).filter(Boolean))];
+          category = categories.length === 1 ? categories[0] : 'Campuran';
+        }
+      } else {
+        let schemeToUse = profitSharingConfig;
+        const customScheme = data.skemaCustom || data.ownerCustomScheme;
+        if (customScheme) {
+          schemeToUse = {};
+          Object.keys(profitSharingConfig).forEach((k) => {
+            schemeToUse[k] = {
+              ...profitSharingConfig[k],
+              percentage: Number(customScheme[k] || 0),
+            };
+          });
+        }
+
+        const calc = calculateProfitSharing(sellingPrice, costPrice, schemeToUse);
+        profit = calc.profit;
+        sharing = calc.sharing;
+      }
 
       const updated = {
         ...data,
         id,
-        ownerName: data.ownerName || 'Akbar',
+        itemName,
+        ownerName,
+        category,
         paymentMethod: data.paymentMethod || 'Transfer Bank',
-        costPrice: Number(data.costPrice || 0),
-        sellingPrice: Number(data.sellingPrice),
+        costPrice,
+        sellingPrice,
         profit,
         profitSharing: sharing,
-        ownerCustomScheme: customScheme || null,
-        skemaCustom: customScheme || null,
-        kodeBarang: data.kodeBarang || null,
-        inventoryItemId: data.inventoryItemId || null,
+        ownerCustomScheme: data.skemaCustom || data.ownerCustomScheme || null,
+        skemaCustom: data.skemaCustom || data.ownerCustomScheme || null,
+        kodeBarang: kodeBarang || null,
+        inventoryItemId: data.inventoryItemId || (finalItems?.[0]?.inventoryItemId) || null,
+        items: finalItems,
         updatedAt: new Date().toISOString(),
       };
 
@@ -311,6 +381,52 @@ export function SalesProvider({ children }) {
     }
   };
 
+  // Merge Multiple Transactions into 1 unified Transaction
+  const mergeTransactions = async (sourceTxIds, mergedData) => {
+    try {
+      // 1. Tambah transaksi baru gabungan
+      const saved = await addTransaction(mergedData);
+
+      // 2. Tandai semua item inventaris terkait transaksi baru menjadi Terjual
+      if (mergedData.items && Array.isArray(mergedData.items)) {
+        for (const item of mergedData.items) {
+          const invId = item.inventoryItemId;
+          if (invId) {
+            try {
+              await markItemAsSold(invId, saved.id, {
+                sellingPrice: Number(item.sellingPrice || 0),
+                namaPenerima: mergedData.namaPenerima || '',
+                noHpPenerima: mergedData.noHpPenerima || '',
+                alamatPenerima: mergedData.alamatPenerima || '',
+                ekspedisi: mergedData.ekspedisi || 'J&T Express',
+                resi: mergedData.resi || '',
+              });
+            } catch (itemErr) {
+              console.warn('Error marking item as sold in merge:', itemErr);
+            }
+          }
+        }
+      }
+
+      // 3. Hapus dokumen transaksi lama dari Firestore (tanpa me-restore inventaris)
+      for (const oldId of sourceTxIds) {
+        try {
+          await deleteTransactionDoc(oldId);
+          dispatch({ type: ACTIONS.DELETE_TRANSACTION, payload: oldId });
+        } catch (delErr) {
+          console.warn(`Could not delete old transaction ${oldId}:`, delErr);
+        }
+      }
+
+      toast.success(`Berhasil menggabungkan ${sourceTxIds.length} transaksi menjadi 1 transaksi! 🎉`);
+      return saved;
+    } catch (err) {
+      console.error('Error merging transactions:', err);
+      toast.error('Gagal menggabungkan transaksi.');
+      throw err;
+    }
+  };
+
   const deleteTransaction = async (id) => {
     try {
       const targetTx = state.transactions.find((t) => t.id === id);
@@ -318,6 +434,13 @@ export function SalesProvider({ children }) {
       // Cascade: Kembalikan seluruh barang terkait transaksi ini menjadi Belum Terjual
       try {
         await restoreItemsByTransactionRef(id, targetTx?.inventoryItemId);
+        if (targetTx?.items && Array.isArray(targetTx.items)) {
+          for (const it of targetTx.items) {
+            if (it.inventoryItemId) {
+              await restoreItemToUnsold(it.inventoryItemId).catch(() => {});
+            }
+          }
+        }
       } catch (invErr) {
         console.warn('Could not restore inventory item to unsold:', invErr);
       }
@@ -385,6 +508,7 @@ export function SalesProvider({ children }) {
     addTransaction,
     addTransactionsBatch,
     updateTransaction,
+    mergeTransactions,
     deleteTransaction,
     getTransactionsByDateRange,
     getCurrentMonthTransactions,

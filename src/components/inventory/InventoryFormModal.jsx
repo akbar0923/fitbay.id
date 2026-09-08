@@ -5,6 +5,7 @@ import Button from '../ui/Button';
 import { CATEGORIES } from '../../constants/profitSharingConfig';
 import { useOwners } from '../../context/OwnerContext';
 import { useInventory } from '../../context/InventoryContext';
+import { formatCurrency } from '../../utils/formatCurrency';
 import toast from 'react-hot-toast';
 
 const initialForm = {
@@ -13,6 +14,7 @@ const initialForm = {
   kategori: 'Baju',
   pemilikBarang: 'Akbar',
   hargaModal: '',
+  hargaJual: '',
   catatan: '',
   status: 'Belum Terjual',
   tanggalMasuk: new Date().toISOString().split('T')[0],
@@ -50,6 +52,7 @@ export default function InventoryFormModal({ isOpen, onClose, onSubmit, editData
           kategori: editData.kategori || 'Baju',
           pemilikBarang: editData.pemilikBarang || (owners[0]?.name || 'Akbar'),
           hargaModal: editData.hargaModal !== undefined && editData.hargaModal !== null ? String(editData.hargaModal) : '',
+          hargaJual: editData.hargaJual !== undefined && editData.hargaJual !== null ? String(editData.hargaJual) : (editData.sellingPrice !== undefined && editData.sellingPrice !== null ? String(editData.sellingPrice) : ''),
           catatan: editData.catatan || '',
           status: editData.status || 'Belum Terjual',
           tanggalMasuk: editData.tanggalMasuk || new Date().toISOString().split('T')[0],
@@ -136,6 +139,11 @@ export default function InventoryFormModal({ isOpen, onClose, onSubmit, editData
       newErrors.hargaModal = 'Harga modal tidak boleh negatif';
     }
 
+    // Harga jual bersifat opsional (jika diisi, tidak boleh negatif)
+    if (form.hargaJual !== '' && Number(form.hargaJual) < 0) {
+      newErrors.hargaJual = 'Harga jual tidak boleh negatif';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -151,6 +159,7 @@ export default function InventoryFormModal({ isOpen, onClose, onSubmit, editData
         ...form,
         namaBarang: itemNameToSave,
         hargaModal: form.hargaModal ? Number(form.hargaModal) : 0,
+        hargaJual: form.hargaJual ? Number(form.hargaJual) : 0,
       };
 
       await onSubmit(payload);
@@ -173,6 +182,7 @@ export default function InventoryFormModal({ isOpen, onClose, onSubmit, editData
           kodeBarang: nextCode,
           namaBarang: '',
           hargaModal: '',
+          hargaJual: '',
           catatan: '',
           // Kategori, pemilikBarang, status, tanggalMasuk tetap dipertahankan
         }));
@@ -370,32 +380,62 @@ export default function InventoryFormModal({ isOpen, onClose, onSubmit, editData
           </div>
         </div>
 
-        {/* Harga Modal & Status (Harga Modal Opsional) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <Input
-              label="Harga Modal (Rp) — Opsional"
-              type="number"
-              placeholder="0 (opsional, bisa diisi nanti)"
-              min="0"
-              value={form.hargaModal}
-              onChange={(e) => handleChange('hargaModal', e.target.value)}
-              error={errors.hargaModal}
-            />
-            <p className="text-[11px] dark:text-gray-400 text-gray-500 mt-0.5">
-              Boleh dikosongkan jika belum diketahui.
-            </p>
+        {/* Informasi Harga: Harga Modal & Harga Jual */}
+        <div className="p-3.5 rounded-2xl dark:bg-white/[0.03] bg-gray-50/80 border dark:border-white/10 border-gray-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold dark:text-white text-gray-900 flex items-center gap-1.5">
+              <span>💰</span>
+              <span>Informasi Harga Barang</span>
+            </h4>
+            {form.hargaJual && form.hargaModal && Number(form.hargaJual) > Number(form.hargaModal) && (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/30">
+                Estimasi Margin: +{formatCurrency(Number(form.hargaJual) - Number(form.hargaModal))}
+              </span>
+            )}
           </div>
 
-          <Select
-            label="Status Barang"
-            value={form.status}
-            onChange={(e) => handleChange('status', e.target.value)}
-          >
-            <option value="Belum Terjual">Belum Terjual (Siap Dijual / Live)</option>
-            <option value="Terjual">Terjual</option>
-          </Select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Input
+                label="Harga Modal (Rp) — Opsional"
+                type="number"
+                placeholder="0 (opsional, bisa diisi nanti)"
+                min="0"
+                value={form.hargaModal}
+                onChange={(e) => handleChange('hargaModal', e.target.value)}
+                error={errors.hargaModal}
+              />
+              <p className="text-[11px] dark:text-gray-400 text-gray-500 mt-0.5">
+                Modal / kesepakatan penitip barang.
+              </p>
+            </div>
+
+            <div>
+              <Input
+                label="Harga Jual (Rp) — Tag / Live"
+                type="number"
+                placeholder="0 (harga display / live)"
+                min="0"
+                value={form.hargaJual}
+                onChange={(e) => handleChange('hargaJual', e.target.value)}
+                error={errors.hargaJual}
+              />
+              <p className="text-[11px] dark:text-gray-400 text-gray-500 mt-0.5">
+                Otomatis mengisi harga jual saat transaksi.
+              </p>
+            </div>
+          </div>
         </div>
+
+        {/* Status Barang */}
+        <Select
+          label="Status Barang"
+          value={form.status}
+          onChange={(e) => handleChange('status', e.target.value)}
+        >
+          <option value="Belum Terjual">Belum Terjual (Siap Dijual / Live)</option>
+          <option value="Terjual">Terjual</option>
+        </Select>
 
         {/* Catatan / Keterangan (Opsional) */}
         <div>

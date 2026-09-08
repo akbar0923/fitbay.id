@@ -47,11 +47,124 @@ export default function ShippingLabelModal({ isOpen, onClose, transaction }) {
   };
 
   const handlePrint = () => {
-    window.print();
+    const isLabel = printType === 'shipping_label';
+    const targetId = isLabel ? 'printable-shipping-label' : 'printable-receipt';
+    const element = document.getElementById(targetId);
+
+    if (!element) {
+      window.print();
+      return;
+    }
+
+    // Gunakan iframe terisolasi agar browser TIDAK mencetak halaman latar belakang tabel (mencegah cetak kali 5)
+    let iframe = document.getElementById('fitbay-label-print-frame');
+    if (iframe) {
+      iframe.remove();
+    }
+    iframe = document.createElement('iframe');
+    iframe.id = 'fitbay-label-print-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.zIndex = '-9999';
+    document.body.appendChild(iframe);
+
+    // Kumpulkan style CSS dari head dokumen
+    const headStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((tag) => tag.outerHTML)
+      .join('\n');
+
+    const iframeDoc = iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(`
+      <!DOCTYPE html>
+      <html lang="id">
+        <head>
+          <meta charset="utf-8">
+          <title>${isLabel ? 'Label Pengiriman' : 'Struk Penjualan'} - Fitbay.id</title>
+          ${headStyles}
+          <style>
+            @page {
+              size: ${isLabel ? '100mm 150mm' : '80mm auto'};
+              margin: 0;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html, body {
+              width: 100%;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+              overflow: hidden !important;
+            }
+            .print-container {
+              width: ${isLabel ? '100mm' : '80mm'};
+              max-width: ${isLabel ? '100mm' : '80mm'};
+              margin: 0 auto;
+              padding: ${isLabel ? '3mm' : '2mm'};
+              box-sizing: border-box;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+              break-inside: avoid !important;
+              break-after: avoid !important;
+            }
+            #${targetId} {
+              box-shadow: none !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              border: ${isLabel ? '2px solid black' : '1px dashed black'} !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+              break-inside: avoid !important;
+              break-after: avoid !important;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-container">
+            ${element.outerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    iframeDoc.close();
+
+    // Tunggu gambar & font selesai termuat di iframe
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        console.warn('Iframe print error, falling back to window.print():', err);
+        window.print();
+      }
+    }, 250);
   };
 
+  const itemList =
+    transaction.items && Array.isArray(transaction.items) && transaction.items.length > 0
+      ? transaction.items
+      : [
+          {
+            itemName: transaction.itemName,
+            kodeBarang: transaction.kodeBarang,
+            sellingPrice: transaction.sellingPrice,
+          },
+        ];
+
   const copyAddressText = () => {
-    const text = `Penerima: ${transaction.namaPenerima || '-'}\nNo. HP: ${transaction.noHpPenerima || '-'}\nAlamat: ${transaction.alamatPenerima || '-'}\nEkspedisi: ${transaction.ekspedisi || 'Reguler'}\nBarang: ${transaction.itemName || '-'} (${transaction.kodeBarang || '-'})`;
+    const itemsFormatted = itemList
+      .map((it, idx) => `${idx + 1}. ${it.itemName || '-'} (${it.kodeBarang || '-'})`)
+      .join('\n');
+
+    const text = `Penerima: ${transaction.namaPenerima || '-'}\nNo. HP: ${transaction.noHpPenerima || '-'}\nAlamat: ${transaction.alamatPenerima || '-'}\nEkspedisi: ${transaction.ekspedisi || 'Reguler'}\nIsi Paket (${itemList.length} Barang):\n${itemsFormatted}`;
     navigator.clipboard.writeText(text);
     toast.success('Alamat lengkap berhasil disalin ke clipboard!');
   };
@@ -232,12 +345,26 @@ export default function ShippingLabelModal({ isOpen, onClose, transaction }) {
                 {/* Section Rincian Paket */}
                 <div className="border border-black rounded-lg p-2.5 mb-3">
                   <div className="flex justify-between items-center text-[10px] font-bold text-gray-600 border-b border-gray-300 pb-1 mb-1.5 uppercase">
-                    <span>Isi Paket ({transaction.kodeBarang || 'ITEM'})</span>
+                    <span>
+                      Isi Paket ({itemList.length > 1 ? `${itemList.length} Barang` : (transaction.kodeBarang || 'ITEM')})
+                    </span>
                     <span>Qty</span>
                   </div>
-                  <div className="flex justify-between items-start text-xs font-bold">
-                    <span className="pr-2">{transaction.itemName || '-'}</span>
-                    <span className="font-mono">1x</span>
+                  <div className="space-y-1">
+                    {itemList.map((it, idx) => (
+                      <div key={idx} className="flex justify-between items-start text-xs font-bold leading-tight">
+                        <span className="pr-2">
+                          {itemList.length > 1 && `${idx + 1}. `}
+                          {it.itemName || '-'}
+                          {it.kodeBarang && (
+                            <span className="font-mono text-[10px] text-gray-700 ml-1">
+                              [{it.kodeBarang}]
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-mono text-[11px] shrink-0">1x</span>
+                      </div>
+                    ))}
                   </div>
                   {transaction.catatanPengiriman && (
                     <div className="mt-1.5 pt-1.5 border-t border-dashed border-gray-300 text-[10px] text-gray-700 font-medium">
@@ -302,15 +429,22 @@ export default function ShippingLabelModal({ isOpen, onClose, transaction }) {
               </div>
 
               {/* Items */}
-              <div className="border-b border-dashed border-black pb-2 mb-2">
-                <div className="flex justify-between font-bold mb-1">
-                  <span>{transaction.itemName || 'Barang'}</span>
-                  <span>{formatCurrency(transaction.sellingPrice)}</span>
-                </div>
-                <div className="flex justify-between text-[10px] text-gray-600">
-                  <span>Kode: {transaction.kodeBarang || '-'}</span>
-                  <span>1x</span>
-                </div>
+              <div className="border-b border-dashed border-black pb-2 mb-2 space-y-1.5">
+                {itemList.map((it, idx) => (
+                  <div key={idx} className="space-y-0.5">
+                    <div className="flex justify-between font-bold">
+                      <span className="truncate pr-2">
+                        {itemList.length > 1 && `${idx + 1}. `}
+                        {it.itemName || 'Barang'}
+                      </span>
+                      <span className="shrink-0">{formatCurrency(it.sellingPrice)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-gray-600">
+                      <span>Kode: {it.kodeBarang || '-'}</span>
+                      <span>1x</span>
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {/* Total & Payment */}
@@ -355,31 +489,59 @@ export default function ShippingLabelModal({ isOpen, onClose, transaction }) {
         </div>
       </div>
 
-      {/* Print Stylesheet khusus Thermal 10x15 cm & Invoice */}
+      {/* Fallback Print Stylesheet khusus jika user menekan Ctrl+P */}
       <style>{`
         @media print {
+          /* 1. Sembunyikan seluruh root aplikasi (menghilangkan tinggi halaman tabel di background) */
+          #root {
+            display: none !important;
+            height: 0 !important;
+            max-height: 0 !important;
+            overflow: hidden !important;
+          }
+          
+          /* 2. Sembunyikan backdrop gelap modal dan elemen modal non-print */
+          body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: hidden !important;
+          }
           body * {
             visibility: hidden;
           }
+
+          /* 3. Hanya tampilkan dokumen target */
           #printable-shipping-label, #printable-shipping-label *,
           #printable-receipt, #printable-receipt * {
-            visibility: visible;
+            visibility: visible !important;
           }
+
+          /* 4. Gunakan absolute, BUKAN fixed (fixed menyebabkan browser mengulang cetak di setiap halaman) */
           #printable-shipping-label, #printable-receipt {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 100% !important;
-            max-width: 100mm !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: ${printType === 'shipping_label' ? '100mm' : '80mm'} !important;
+            max-width: ${printType === 'shipping_label' ? '100mm' : '80mm'} !important;
+            max-height: ${printType === 'shipping_label' ? '148mm' : 'none'} !important;
             margin: 0 !important;
-            padding: 15px !important;
+            padding: ${printType === 'shipping_label' ? '3mm' : '2mm'} !important;
             box-shadow: none !important;
-            border: 2px solid black !important;
+            border: ${printType === 'shipping_label' ? '2px solid black' : '1px dashed black'} !important;
             background: white !important;
             color: black !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+            break-inside: avoid !important;
+            break-after: avoid !important;
           }
+
           @page {
-            size: 100mm 150mm;
+            size: ${printType === 'shipping_label' ? '100mm 150mm' : '80mm auto'};
             margin: 0;
           }
         }

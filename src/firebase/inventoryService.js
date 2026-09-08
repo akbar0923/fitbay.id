@@ -146,6 +146,7 @@ export async function addInventoryItem(itemData, userAuthor = 'admin') {
     kategori: itemData.kategori || 'Baju',
     pemilikBarang: itemData.pemilikBarang?.trim() || 'Akbar',
     hargaModal: Number(itemData.hargaModal) || 0,
+    hargaJual: itemData.hargaJual !== undefined && itemData.hargaJual !== '' ? Number(itemData.hargaJual) : 0,
     catatan: itemData.catatan?.trim() || '',
     status: itemData.status || 'Belum Terjual',
     referensiTransaksiId: itemData.referensiTransaksiId || null,

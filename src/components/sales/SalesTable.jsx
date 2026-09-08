@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useSales } from '../../context/SalesContext';
 import { useAuth } from '../../context/AuthContext';
 import { useOwners } from '../../context/OwnerContext';
@@ -16,9 +16,9 @@ import Badge from '../ui/Badge';
 import EmptyState from '../ui/EmptyState';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
-import { SkeletonTable } from '../ui/Skeleton';
 import ShippingLabelModal from './ShippingLabelModal';
 import BulkEditSalesModal from './BulkEditSalesModal';
+import MergeSalesModal from './MergeSalesModal';
 import BulkActionBar from '../common/BulkActionBar';
 import toast from 'react-hot-toast';
 
@@ -31,7 +31,31 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [expandedTxId, setExpandedTxId] = useState(null);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  // Deteksi transaksi dengan pelanggan yang sama (nama atau nomor HP)
+  const sameCustomerTransactions = useMemo(() => {
+    const map = new Map();
+    transactions.forEach((tx) => {
+      const key = (tx.noHpPenerima || tx.namaPenerima || '').trim().toLowerCase();
+      if (key && key.length >= 3) {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(tx);
+      }
+    });
+    return map;
+  }, [transactions]);
+
+  const handleSelectSameCustomer = (key) => {
+    const list = sameCustomerTransactions.get(key) || [];
+    if (list.length === 0) return;
+    const next = new Set(selectedIds);
+    list.forEach((tx) => next.add(tx.id));
+    setSelectedIds(next);
+    toast.success(`${list.length} transaksi pelanggan ini terpilih! Silakan klik 'Gabungkan Transaksi' di tombol bawah.`);
+  };
 
   const [search, setSearch] = useState('');
   const [filterOwner, setFilterOwner] = useState('');
@@ -483,144 +507,230 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     const sourceColor = ORDER_SOURCE_COLORS[tx.sumberPesanan || 'WhatsApp'] || ORDER_SOURCE_COLORS['WhatsApp'];
                     const isShopee = tx.sumberPesanan === 'Shopee';
                     const isSelected = selectedIds.has(tx.id);
+                    const isMultiItem = Boolean(tx.items && Array.isArray(tx.items) && tx.items.length > 1);
+                    const isExpanded = expandedTxId === tx.id;
+                    const customerKey = (tx.noHpPenerima || tx.namaPenerima || '').trim().toLowerCase();
+                    const sameCustomerList = customerKey.length >= 3 ? (sameCustomerTransactions.get(customerKey) || []) : [];
 
                     return (
-                      <tr
-                        key={tx.id}
-                        className={`transition-colors duration-150 ${
-                          isSelected
-                            ? 'dark:bg-accent/10 bg-accent/5'
-                            : 'dark:hover:bg-white/[0.02] hover:bg-gray-50'
-                        }`}
-                      >
-                        {/* Checkbox */}
-                        <td className="px-4 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => handleToggleSelectOne(tx.id, e)}
-                            className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
-                          />
-                        </td>
+                      <Fragment key={tx.id}>
+                        <tr
+                          className={`transition-colors duration-150 ${
+                            isSelected
+                              ? 'dark:bg-accent/10 bg-accent/5'
+                              : 'dark:hover:bg-white/[0.02] hover:bg-gray-50'
+                          }`}
+                        >
+                          {/* Checkbox */}
+                          <td className="px-4 py-3.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => handleToggleSelectOne(tx.id, e)}
+                              className="w-4 h-4 rounded border-gray-300 dark:border-white/20 text-accent focus:ring-accent accent-accent cursor-pointer"
+                            />
+                          </td>
 
-                        <td className="px-4 py-3.5 text-sm dark:text-gray-300 text-gray-700 whitespace-nowrap">
-                          {formatDate(tx.date)}
-                        </td>
-                        {/* Kode Barang Badge */}
-                        <td className="px-3 py-3.5 whitespace-nowrap">
-                          {tx.kodeBarang ? (
-                            <span className="inline-flex items-center gap-1 font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-accent/15 text-accent border border-accent/30">
-                              <span>🏷️</span>
-                              <span>{tx.kodeBarang}</span>
+                          <td className="px-4 py-3.5 text-sm dark:text-gray-300 text-gray-700 whitespace-nowrap">
+                            {formatDate(tx.date)}
+                          </td>
+                          {/* Kode Barang Badge */}
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            {tx.kodeBarang ? (
+                              <div className="flex flex-wrap gap-1 max-w-[130px]">
+                                {tx.kodeBarang.split(',').map((c, cIdx) => (
+                                  <span key={cIdx} className="inline-flex items-center gap-1 font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-accent/15 text-accent border border-accent/30">
+                                    <span>🏷️</span>
+                                    <span>{c.trim()}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400 font-mono">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-sm dark:text-white text-gray-900 font-medium max-w-[180px]">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {isMultiItem && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedTxId(isExpanded ? null : tx.id);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/30 transition-colors shrink-0"
+                                  title="Klik untuk melihat/tutup rincian barang"
+                                >
+                                  <span>📦 {tx.items.length} Item</span>
+                                  <span>{isExpanded ? '▲' : '▼'}</span>
+                                </button>
+                              )}
+                              <span className="truncate" title={tx.itemName}>{tx.itemName}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium dark:bg-emerald-500/10 bg-emerald-50 text-emerald-400 border dark:border-emerald-500/20 border-emerald-200">
+                              {tx.ownerName || 'Akbar'}
                             </span>
-                          ) : (
-                            <span className="text-xs text-gray-400 font-mono">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-sm dark:text-white text-gray-900 font-medium max-w-[160px] truncate">
-                          {tx.itemName}
-                        </td>
-                        <td className="px-3 py-3.5 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium dark:bg-emerald-500/10 bg-emerald-50 text-emerald-400 border dark:border-emerald-500/20 border-emerald-200">
-                            {tx.ownerName || 'Akbar'}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3.5 whitespace-nowrap">
-                          <span className="text-xs px-2 py-0.5 rounded-lg dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-600">
-                            {tx.category}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3.5 text-sm text-right dark:text-gray-400 text-gray-600 whitespace-nowrap">
-                          {formatCurrency(tx.costPrice)}
-                        </td>
-                        <td className="px-3 py-3.5 text-sm text-right dark:text-gray-200 text-gray-900 whitespace-nowrap font-medium">
-                          {formatCurrency(tx.sellingPrice)}
-                        </td>
-                        <td className={`px-3 py-3.5 text-sm text-right whitespace-nowrap font-semibold ${tx.profit > 0 ? 'text-emerald-400' : tx.profit < 0 ? 'text-red-400' : 'dark:text-gray-400 text-gray-600'}`}>
-                          {formatCurrency(tx.profit)}
-                        </td>
-                        
-                        {/* Sumber Pesanan & Penerima */}
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${sourceColor.bg} ${sourceColor.text}`}>
-                              <span>{sourceColor.icon}</span>
-                              <span>{tx.sumberPesanan || 'WhatsApp'}</span>
+                          </td>
+                          <td className="px-3 py-3.5 whitespace-nowrap">
+                            <span className="text-xs px-2 py-0.5 rounded-lg dark:bg-white/5 bg-gray-100 dark:text-gray-300 text-gray-600">
+                              {tx.category}
                             </span>
-                            {tx.namaPenerima && (
-                              <div className="flex items-center gap-1 text-[11px] dark:text-gray-400 text-gray-500 max-w-[130px] truncate" title={`${tx.namaPenerima} - ${tx.alamatPenerima || ''}`}>
-                                <span>📦 {tx.namaPenerima}</span>
+                          </td>
+                          <td className="px-3 py-3.5 text-sm text-right dark:text-gray-400 text-gray-600 whitespace-nowrap">
+                            {formatCurrency(tx.costPrice)}
+                          </td>
+                          <td className="px-3 py-3.5 text-sm text-right dark:text-gray-200 text-gray-900 whitespace-nowrap font-medium">
+                            {formatCurrency(tx.sellingPrice)}
+                          </td>
+                          <td className={`px-3 py-3.5 text-sm text-right whitespace-nowrap font-semibold ${tx.profit > 0 ? 'text-emerald-400' : tx.profit < 0 ? 'text-red-400' : 'dark:text-gray-400 text-gray-600'}`}>
+                            {formatCurrency(tx.profit)}
+                          </td>
+                          
+                          {/* Sumber Pesanan & Penerima */}
+                          <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                            <div className="flex flex-col items-center gap-1">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${sourceColor.bg} ${sourceColor.text}`}>
+                                <span>{sourceColor.icon}</span>
+                                <span>{tx.sumberPesanan || 'WhatsApp'}</span>
+                              </span>
+                              {tx.namaPenerima && (
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <div className="flex items-center gap-1 text-[11px] dark:text-gray-400 text-gray-500 max-w-[130px] truncate" title={`${tx.namaPenerima} - ${tx.alamatPenerima || ''}`}>
+                                    <span>📦 {tx.namaPenerima}</span>
+                                    <button
+                                      onClick={(e) => handleCopyAddress(tx, e)}
+                                      className="text-accent hover:text-white p-0.5 rounded"
+                                      title="Salin Alamat Lengkap"
+                                    >
+                                      📋
+                                    </button>
+                                  </div>
+                                  {sameCustomerList.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectSameCustomer(customerKey);
+                                      }}
+                                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
+                                      title="Ada transaksi lain dengan pelanggan ini! Klik untuk memilih semuanya dan gabungkan."
+                                    >
+                                      ⚡ {sameCustomerList.length} Order (Pilih)
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${payColor.bg} ${payColor.text}`}>
+                              <span>{payColor.icon}</span>
+                              <span>{tx.paymentMethod || 'Transfer'}</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                            <Badge status={tx.status} />
+                          </td>
+                          <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1">
+                              {/* Tombol Cetak Label Pengiriman / Struk */}
+                              <button
+                                onClick={() => handleOpenShippingModal(tx)}
+                                className={`p-2 rounded-lg transition-all duration-200 ${
+                                  isShopee
+                                    ? 'dark:text-gray-500 text-gray-400 hover:text-gray-300 dark:hover:bg-white/5'
+                                    : 'dark:text-emerald-400 text-emerald-600 dark:hover:bg-emerald-500/10 hover:bg-emerald-50'
+                                }`}
+                                title={isShopee ? 'Cetak Struk / Invoice (Label Otomatis Shopee)' : 'Cetak Label Pengiriman (10x15 cm) & Struk'}
+                              >
+                                <span className="text-sm">🖨️</span>
+                              </button>
+
+                              {/* Tombol Salin Alamat Langsung */}
+                              {tx.alamatPenerima && (
                                 <button
                                   onClick={(e) => handleCopyAddress(tx, e)}
-                                  className="text-accent hover:text-white p-0.5 rounded"
-                                  title="Salin Alamat Lengkap"
+                                  className="p-2 rounded-lg dark:text-accent text-accent dark:hover:bg-accent/10 hover:bg-accent/10 transition-all duration-200"
+                                  title="Salin Alamat Penerima"
                                 >
-                                  📋
+                                  <span className="text-sm">📋</span>
                                 </button>
-                              </div>
-                            )}
-                          </div>
-                        </td>
+                              )}
 
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium ${payColor.bg} ${payColor.text}`}>
-                            <span>{payColor.icon}</span>
-                            <span>{tx.paymentMethod || 'Transfer'}</span>
-                          </span>
-                        </td>
-                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                          <Badge status={tx.status} />
-                        </td>
-                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1">
-                            {/* Tombol Cetak Label Pengiriman / Struk */}
-                            <button
-                              onClick={() => handleOpenShippingModal(tx)}
-                              className={`p-2 rounded-lg transition-all duration-200 ${
-                                isShopee
-                                  ? 'dark:text-gray-500 text-gray-400 hover:text-gray-300 dark:hover:bg-white/5'
-                                  : 'dark:text-emerald-400 text-emerald-600 dark:hover:bg-emerald-500/10 hover:bg-emerald-50'
-                              }`}
-                              title={isShopee ? 'Cetak Struk / Invoice (Label Otomatis Shopee)' : 'Cetak Label Pengiriman (10x15 cm) & Struk'}
-                            >
-                              <span className="text-sm">🖨️</span>
-                            </button>
-
-                            {/* Tombol Salin Alamat Langsung */}
-                            {tx.alamatPenerima && (
                               <button
-                                onClick={(e) => handleCopyAddress(tx, e)}
-                                className="p-2 rounded-lg dark:text-accent text-accent dark:hover:bg-accent/10 hover:bg-accent/10 transition-all duration-200"
-                                title="Salin Alamat Penerima"
-                              >
-                                <span className="text-sm">📋</span>
-                              </button>
-                            )}
-
-                            <button
-                              onClick={() => onEdit(tx)}
-                              className="p-2 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:text-blue-400 hover:text-blue-600 dark:hover:bg-blue-500/10 hover:bg-blue-50 transition-all duration-200"
-                              title="Edit Transaksi"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                              </svg>
-                            </button>
-                            {/* Tombol Hapus hanya untuk Admin */}
-                            {isAdmin && (
-                              <button
-                                onClick={() => onDelete(tx)}
-                                className="p-2 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:text-red-400 hover:text-red-600 dark:hover:bg-red-500/10 hover:bg-red-50 transition-all duration-200"
-                                title="Hapus (Admin)"
+                                onClick={() => onEdit(tx)}
+                                className="p-2 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:text-blue-400 hover:text-blue-600 dark:hover:bg-blue-500/10 hover:bg-blue-50 transition-all duration-200"
+                                title="Edit Transaksi"
                               >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
                                 </svg>
                               </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                              {/* Tombol Hapus hanya untuk Admin */}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => onDelete(tx)}
+                                  className="p-2 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:text-red-400 hover:text-red-600 dark:hover:bg-red-500/10 hover:bg-red-50 transition-all duration-200"
+                                  title="Hapus (Admin)"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Expandable Sub-Row jika transaksi berisi multi-item */}
+                        {isExpanded && isMultiItem && (
+                          <tr key={`${tx.id}_expanded`} className="dark:bg-purple-500/5 bg-purple-50/70 border-b dark:border-white/5 border-purple-100 animate-fade-in">
+                            <td colSpan={13} className="px-6 py-3">
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                                    <span>📦</span>
+                                    <span>Rincian {tx.items.length} Barang dalam Paket Transaksi Ini:</span>
+                                  </p>
+                                  <span className="text-[11px] dark:text-gray-400 text-gray-500">
+                                    Tujuan: <strong>{tx.namaPenerima || 'Pelanggan'}</strong> {tx.alamatPenerima ? `(${tx.alamatPenerima})` : ''}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                  {tx.items.map((it, itIdx) => (
+                                    <div
+                                      key={it.id || itIdx}
+                                      className="p-2.5 rounded-xl dark:bg-surface-300 bg-white border dark:border-white/10 border-gray-200 shadow-sm flex items-center justify-between text-xs"
+                                    >
+                                      <div className="truncate pr-2">
+                                        <p className="font-bold dark:text-white text-gray-900 truncate">
+                                          {itIdx + 1}. {it.itemName}
+                                        </p>
+                                        <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5">
+                                          {it.kodeBarang && (
+                                            <span className="font-mono text-accent font-bold px-1 py-0.2 rounded bg-accent/15">
+                                              🏷️ {it.kodeBarang}
+                                            </span>
+                                          )}
+                                          <span>Pemilik: <strong className="text-emerald-400">{it.ownerName || '-'}</strong></span>
+                                          <span>• {it.category}</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <p className="font-bold text-accent">{formatCurrency(it.sellingPrice)}</p>
+                                        <p className="text-[10px] text-gray-400">Modal: {formatCurrency(it.costPrice)}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -636,6 +746,10 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
               const sourceColor = ORDER_SOURCE_COLORS[tx.sumberPesanan || 'WhatsApp'] || ORDER_SOURCE_COLORS['WhatsApp'];
               const isShopee = tx.sumberPesanan === 'Shopee';
               const isSelected = selectedIds.has(tx.id);
+              const isMultiItem = Boolean(tx.items && Array.isArray(tx.items) && tx.items.length > 1);
+              const isExpanded = expandedTxId === tx.id;
+              const customerKey = (tx.noHpPenerima || tx.namaPenerima || '').trim().toLowerCase();
+              const sameCustomerList = customerKey.length >= 3 ? (sameCustomerTransactions.get(customerKey) || []) : [];
 
               return (
                 <div
@@ -657,9 +771,23 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {tx.kodeBarang && (
-                            <span className="font-mono text-[11px] font-bold text-accent px-1.5 py-0.5 rounded bg-accent/15 border border-accent/25">
-                              {tx.kodeBarang}
-                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {tx.kodeBarang.split(',').map((c, cIdx) => (
+                                <span key={cIdx} className="font-mono text-[11px] font-bold text-accent px-1.5 py-0.5 rounded bg-accent/15 border border-accent/25">
+                                  {c.trim()}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {isMultiItem && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedTxId(isExpanded ? null : tx.id)}
+                              className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1"
+                            >
+                              <span>📦 {tx.items.length} Item</span>
+                              <span>{isExpanded ? '▲' : '▼'}</span>
+                            </button>
                           )}
                           <p className="text-sm font-semibold dark:text-white text-gray-900">{tx.itemName}</p>
                         </div>
@@ -680,23 +808,62 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     </div>
                   </div>
 
+                  {/* Rincian Barang jika di-expand pada mobile */}
+                  {isExpanded && isMultiItem && (
+                    <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 space-y-1.5 text-xs animate-fade-in">
+                      <p className="font-bold text-purple-400 text-[11px]">Rincian Barang ({tx.items.length} Item):</p>
+                      <div className="space-y-1.5">
+                        {tx.items.map((it, itIdx) => (
+                          <div key={it.id || itIdx} className="p-2 rounded-lg bg-white dark:bg-surface-300 flex justify-between items-center text-[11px]">
+                            <div className="truncate pr-2">
+                              <p className="font-bold dark:text-white text-gray-900 truncate">
+                                {itIdx + 1}. {it.itemName}
+                              </p>
+                              <p className="text-[10px] text-gray-400">
+                                {it.kodeBarang ? `[${it.kodeBarang}] ` : ''}Pemilik: {it.ownerName || '-'}
+                              </p>
+                            </div>
+                            <span className="font-bold text-accent shrink-0">{formatCurrency(it.sellingPrice)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Info Penerima jika ada */}
                   {tx.namaPenerima && (
-                    <div className="p-2.5 rounded-xl dark:bg-white/5 bg-gray-50 border dark:border-white/5 border-gray-200 text-xs flex items-center justify-between">
-                      <div className="min-w-0 pr-2">
-                        <p className="font-bold dark:text-white text-gray-900 truncate">
-                          📦 {tx.namaPenerima} ({tx.noHpPenerima || '-'})
-                        </p>
-                        <p className="text-[11px] dark:text-gray-400 text-gray-500 truncate">
-                          {tx.alamatPenerima || 'Alamat lengkap'}
-                        </p>
+                    <div className="p-2.5 rounded-xl dark:bg-white/5 bg-gray-50 border dark:border-white/5 border-gray-200 text-xs flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 pr-2">
+                          <p className="font-bold dark:text-white text-gray-900 truncate">
+                            📦 {tx.namaPenerima} ({tx.noHpPenerima || '-'})
+                          </p>
+                          <p className="text-[11px] dark:text-gray-400 text-gray-500 truncate">
+                            {tx.alamatPenerima || 'Alamat lengkap'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => handleCopyAddress(tx, e)}
+                          className="px-2 py-1 rounded-lg text-[10px] font-bold bg-accent/20 text-accent shrink-0"
+                        >
+                          📋 Salin
+                        </button>
                       </div>
-                      <button
-                        onClick={(e) => handleCopyAddress(tx, e)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-accent/20 text-accent shrink-0"
-                      >
-                        📋 Salin
-                      </button>
+
+                      {sameCustomerList.length > 1 && (
+                        <div className="pt-1.5 border-t dark:border-white/5 border-gray-200 flex items-center justify-between">
+                          <span className="text-[11px] text-amber-400 font-medium">
+                            ⚡ Ada {sameCustomerList.length} order terpisah pelanggan ini
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectSameCustomer(customerKey)}
+                            className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          >
+                            Pilih Semua
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -844,10 +1011,20 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
             onBulkDelete={() => setIsBulkDeleteOpen(true)}
             deleteLabel="Hapus Transaksi Terpilih"
             actions={[
+              ...(selectedIds.size >= 2
+                ? [
+                    {
+                      label: 'Gabungkan Transaksi',
+                      icon: '🔗',
+                      variant: 'primary',
+                      onClick: () => setIsMergeModalOpen(true),
+                    },
+                  ]
+                : []),
               {
                 label: 'Edit Terpilih',
                 icon: '✏️',
-                variant: 'primary',
+                variant: 'secondary',
                 onClick: () => setIsBulkEditOpen(true),
               },
               {
@@ -857,6 +1034,14 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                 onClick: handleExportSelected,
               },
             ]}
+          />
+
+          {/* Modal Gabungkan Transaksi Pelanggan yang Sama */}
+          <MergeSalesModal
+            isOpen={isMergeModalOpen}
+            onClose={() => setIsMergeModalOpen(false)}
+            selectedTransactions={transactions.filter((t) => selectedIds.has(t.id))}
+            onSuccess={() => setSelectedIds(new Set())}
           />
 
           {/* Modal Edit Massal Transaksi */}

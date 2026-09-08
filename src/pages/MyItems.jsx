@@ -301,7 +301,7 @@ export default function MyItems() {
       costPrice: String(raw.hargaModal || 0),
       kodeBarang: raw.kodeBarang || '',
       inventoryItemId: raw.id,
-      sellingPrice: '',
+      sellingPrice: raw.hargaJual ? String(raw.hargaJual) : (raw.sellingPrice ? String(raw.sellingPrice) : ''),
       date: new Date().toISOString().split('T')[0],
       paymentMethod: 'Transfer Bank',
       sumberPesanan: 'WhatsApp',
@@ -563,6 +563,11 @@ export default function MyItems() {
                     <span className="px-2 py-0.5 rounded-md dark:bg-white/5 bg-gray-100 font-medium">
                       {item.kategori || 'Baju'}
                     </span>
+                    {item.sellingPrice > 0 && (
+                      <span className="px-2 py-0.5 rounded-md bg-accent/15 text-accent font-bold text-[11px]">
+                        Jual: {formatCurrency(item.sellingPrice)}
+                      </span>
+                    )}
                     {item.catatan && (
                       <span className="truncate max-w-[180px] italic text-[11px] dark:text-gray-500 text-gray-400">
                         {item.catatan}

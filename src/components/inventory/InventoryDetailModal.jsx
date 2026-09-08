@@ -29,7 +29,7 @@ export default function InventoryDetailModal({ isOpen, onClose, item, onMarkSold
   const effectiveSource = linkedTransaction?.sumberPesanan || item.sumberPesanan || 'WhatsApp';
   const effectiveCourier = linkedTransaction?.ekspedisi || item.ekspedisi || 'J&T Express';
   const effectiveResi = linkedTransaction?.resi || item.resi || '';
-  const effectiveSellingPrice = linkedTransaction?.sellingPrice || item.sellingPrice || 0;
+  const effectiveSellingPrice = linkedTransaction?.sellingPrice || item.sellingPrice || item.hargaJual || 0;
   const effectiveProfit = linkedTransaction?.profit || (effectiveSellingPrice - (item.hargaModal || 0));
   const effectiveDate = linkedTransaction?.date || item.tanggalTerjual || item.tanggalMasuk;
 
@@ -43,13 +43,15 @@ export default function InventoryDetailModal({ isOpen, onClose, item, onMarkSold
     kodeBarang: item.kodeBarang,
     itemName: item.namaBarang,
     sellingPrice: effectiveSellingPrice,
+    costPrice: item.hargaModal || 0,
+    profit: effectiveProfit,
+    date: effectiveDate,
+    status: item.status,
     namaPenerima: effectiveRecipientName,
     noHpPenerima: effectivePhone,
     alamatPenerima: effectiveAddress,
-    sumberPesanan: effectiveSource,
     ekspedisi: effectiveCourier,
     resi: effectiveResi,
-    date: effectiveDate,
   };
 
   const handleCopyAddress = () => {
@@ -67,36 +69,42 @@ export default function InventoryDetailModal({ isOpen, onClose, item, onMarkSold
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title={`Detail Barang: ${item.kodeBarang}`}
-        size="md"
+        title={
+          <div className="flex items-center gap-2">
+            <span>📦 Detail Data Barang</span>
+          </div>
+        }
+        size="lg"
       >
         <div className="space-y-4">
-          {/* Header Banner */}
-          <div className="p-4 rounded-2xl dark:bg-surface-300/60 bg-gray-50 border dark:border-white/5 border-gray-200 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-accent/15 text-accent flex items-center justify-center text-xl font-bold font-mono">
-                🏷️
+          {/* Header Barang */}
+          <div className="p-4 rounded-2xl dark:bg-white/[0.03] bg-gray-50 border dark:border-white/10 border-gray-200 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-accent/15 text-accent flex items-center justify-center text-xl shrink-0 font-bold font-mono">
+                  🏷️
+                </div>
+                <div>
+                  <span className="font-mono font-bold text-accent text-sm tracking-wider">
+                    {item.kodeBarang}
+                  </span>
+                  <h3 className="font-bold text-base dark:text-white text-gray-900 leading-snug">
+                    {item.namaBarang}
+                  </h3>
+                </div>
               </div>
-              <div>
-                <span className="font-mono font-bold text-accent text-sm tracking-wider">
-                  {item.kodeBarang}
-                </span>
-                <h3 className="font-bold text-base dark:text-white text-gray-900 leading-snug">
-                  {item.namaBarang}
-                </h3>
-              </div>
-            </div>
 
-            <span
-              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                isSold
-                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
-              }`}
-            >
-              <span>{isSold ? '✅' : '⏳'}</span>
-              <span>{item.status}</span>
-            </span>
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                  isSold
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse'
+                }`}
+              >
+                <span>{isSold ? '✅' : '⏳'}</span>
+                <span>{item.status}</span>
+              </span>
+            </div>
           </div>
 
           {/* Info Grid */}
@@ -112,13 +120,20 @@ export default function InventoryDetailModal({ isOpen, onClose, item, onMarkSold
             </div>
 
             <div className="p-3 rounded-xl dark:bg-surface-300/40 bg-gray-50 border dark:border-white/5 border-gray-200">
-              <span className="dark:text-gray-400 text-gray-500 font-medium">Harga Modal / Kesepakatan:</span>
-              <p className="font-bold text-sm text-emerald-400 mt-0.5">
+              <span className="dark:text-gray-400 text-gray-500 font-medium">Harga Modal:</span>
+              <p className="font-bold text-sm text-gray-200 mt-0.5">
                 {formatCurrency(item.hargaModal || 0)}
               </p>
             </div>
 
             <div className="p-3 rounded-xl dark:bg-surface-300/40 bg-gray-50 border dark:border-white/5 border-gray-200">
+              <span className="dark:text-gray-400 text-gray-500 font-medium">Harga Jual:</span>
+              <p className="font-bold text-sm text-accent mt-0.5">
+                {item.hargaJual || effectiveSellingPrice ? formatCurrency(item.hargaJual || effectiveSellingPrice) : '-'}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl dark:bg-surface-300/40 bg-gray-50 border dark:border-white/5 border-gray-200 col-span-2">
               <span className="dark:text-gray-400 text-gray-500 font-medium">Tanggal Masuk:</span>
               <p className="font-semibold dark:text-white text-gray-900 mt-0.5">
                 {item.tanggalMasuk ? formatDate(item.tanggalMasuk) : '-'}
