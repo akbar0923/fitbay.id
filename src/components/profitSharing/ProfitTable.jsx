@@ -1,7 +1,11 @@
 import { useMemo } from 'react';
 import { useSales } from '../../context/SalesContext';
 import { formatCurrency, formatDate } from '../../utils/formatCurrency';
-import { calculateTotalSharing } from '../../utils/calculateProfitSharing';
+import {
+  calculateTotalSharing,
+  getRowProfitSharing,
+  getTransactionSchemeBadge,
+} from '../../utils/calculateProfitSharing';
 
 export default function ProfitTable({ filteredTransactions }) {
   const { profitSharingConfig } = useSales();
@@ -47,8 +51,8 @@ export default function ProfitTable({ filteredTransactions }) {
           </thead>
           <tbody className="divide-y dark:divide-white/5 divide-gray-100">
             {soldTransactions.map((tx) => {
-              const customScheme = tx.skemaCustom || tx.ownerCustomScheme;
-              const isCustom = Boolean(customScheme);
+              const badge = getTransactionSchemeBadge(tx);
+              const rowSharing = getRowProfitSharing(tx, profitSharingConfig);
 
               return (
                 <tr key={tx.id} className="dark:hover:bg-white/[0.02] hover:bg-gray-50 transition-colors">
@@ -60,22 +64,16 @@ export default function ProfitTable({ filteredTransactions }) {
                     <div className="text-[11px] text-accent truncate">Pemilik: {tx.ownerName || '-'}</div>
                   </td>
                   <td className="px-3 py-3 text-center whitespace-nowrap">
-                    {isCustom ? (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/20">
-                        ⚡ {customScheme.pemilikBarang}% / {customScheme.operational}% Ops
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                        🌐 Standar ({profitSharingConfig?.pemilikBarang?.percentage || 70}%)
-                      </span>
-                    )}
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${badge.className}`}>
+                      {badge.label}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-right font-semibold text-emerald-400 whitespace-nowrap">
                     {formatCurrency(tx.profit)}
                   </td>
                   {shareKeys.map((key) => (
                     <td key={key} className="px-3 py-3 text-sm text-right dark:text-gray-300 text-gray-700 whitespace-nowrap font-medium">
-                      {formatCurrency(tx.profitSharing?.[key] || 0)}
+                      {formatCurrency(rowSharing[key] || 0)}
                     </td>
                   ))}
                 </tr>
@@ -102,8 +100,8 @@ export default function ProfitTable({ filteredTransactions }) {
       {/* Mobile Cards */}
       <div className="lg:hidden divide-y dark:divide-white/5 divide-gray-100">
         {soldTransactions.map((tx) => {
-          const customScheme = tx.skemaCustom || tx.ownerCustomScheme;
-          const isCustom = Boolean(customScheme);
+          const badge = getTransactionSchemeBadge(tx);
+          const rowSharing = getRowProfitSharing(tx, profitSharingConfig);
 
           return (
             <div key={tx.id} className="p-4 space-y-2">
@@ -114,18 +112,16 @@ export default function ProfitTable({ filteredTransactions }) {
                 </div>
                 <div className="text-right">
                   <span className="text-sm font-bold text-emerald-400 block">{formatCurrency(tx.profit)}</span>
-                  {isCustom ? (
-                    <span className="text-[10px] font-bold text-purple-400">⚡ {customScheme.pemilikBarang}% / {customScheme.operational}%</span>
-                  ) : (
-                    <span className="text-[10px] text-blue-400">🌐 Standar</span>
-                  )}
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${badge.className}`}>
+                    {badge.label}
+                  </span>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-1.5 pt-1">
                 {shareKeys.map((key) => (
                   <div key={key} className="text-center p-2 rounded-lg dark:bg-white/[0.03] bg-gray-50">
                     <p className="text-[10px] dark:text-gray-500 text-gray-400 truncate">{profitSharingConfig[key].label}</p>
-                    <p className="text-xs font-semibold dark:text-gray-200 text-gray-800">{formatCurrency(tx.profitSharing?.[key] || 0)}</p>
+                    <p className="text-xs font-semibold dark:text-gray-200 text-gray-800">{formatCurrency(rowSharing[key] || 0)}</p>
                   </div>
                 ))}
               </div>

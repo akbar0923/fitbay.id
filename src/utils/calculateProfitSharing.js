@@ -43,6 +43,255 @@ export function calculateProfitSharing(sellingPrice, costPrice, customConfig = P
 }
 
 /**
+ * Menghitung rincian pembagian hasil untuk satu baris transaksi di tabel
+ * Menempatkan hak barang pribadi tim ke kolom masing-masing anggota (Akbar, Nesa, Andin, Ritza),
+ * barang penitip luar ke kolom pemilikBarang, dan menambahkan komisi 5% serta operasional.
+ * @param {object} tx - Transaksi
+ * @param {object} [customConfig] - Konfigurasi persentase dinamis
+ * @returns {object} { pemilikBarang, operational, akbar, nesa, andin, ritza, ... }
+ */
+export function getRowProfitSharing(tx, customConfig = PROFIT_SHARING_CONFIG) {
+  const row = {
+    pemilikBarang: 0,
+    operational: 0,
+    operasional: 0,
+    akbar: 0,
+    muhbar: 0,
+    nesa: 0,
+    nessa: 0,
+    andin: 0,
+    ritza: 0,
+  };
+
+  if (!tx || tx.status !== 'Terjual') return row;
+
+  if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+    tx.items.forEach((it) => {
+      const owner = it.ownerName || tx.ownerName || '';
+      const tk = getTeamMemberKey(owner);
+      const sell = Number(it.sellingPrice || 0);
+      const cost = Number(it.costPrice || 0);
+      const profit = Number(it.profit !== undefined ? it.profit : sell - cost);
+
+      const custom = it.skemaCustom || tx.skemaCustom || tx.ownerCustomScheme;
+
+      if (tk) {
+        // Barang milik tim (Akbar, Nessa, Andin, Ritza)
+        const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
+        const opsPct = custom?.operational !== undefined ? Number(custom.operational) : 15;
+
+        // Cek apakah sudah ada hak spesifik tersimpan di item.profitSharing
+        const hak = it.profitSharing?.[tk] !== undefined && Number(it.profitSharing[tk]) > 0
+          ? Number(it.profitSharing[tk])
+          : (it.profitSharing?.pemilikBarang !== undefined
+            ? Number(it.profitSharing.pemilikBarang)
+            : Math.round((profit * pct) / 100));
+
+        const opsHak = it.profitSharing?.operational !== undefined
+          ? Number(it.profitSharing.operational)
+          : (it.profitSharing?.operasional !== undefined
+            ? Number(it.profitSharing.operasional)
+            : Math.round((profit * opsPct) / 100));
+
+        row[tk] = (row[tk] || 0) + hak;
+        if (tk === 'nesa') row.nessa = (row.nessa || 0) + hak;
+        if (tk === 'nessa') row.nesa = (row.nesa || 0) + hak;
+        if (tk === 'akbar') row.muhbar = (row.muhbar || 0) + hak;
+
+        row.operational += opsHak;
+        row.operasional += opsHak;
+      } else {
+        // Barang milik penitip eksternal (Atun, Bilah, dll)
+        const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 70;
+        const opsPct = custom?.operational !== undefined ? Number(custom.operational) : 10;
+
+        const hak = it.profitSharing?.pemilikBarang !== undefined
+          ? Number(it.profitSharing.pemilikBarang)
+          : Math.round((profit * pct) / 100);
+
+        const opsHak = it.profitSharing?.operational !== undefined
+          ? Number(it.profitSharing.operational)
+          : (it.profitSharing?.operasional !== undefined
+            ? Number(it.profitSharing.operasional)
+            : Math.round((profit * opsPct) / 100));
+
+        row.pemilikBarang += hak;
+        row.operational += opsHak;
+        row.operasional += opsHak;
+
+        // Komisi 5% tiap anggota tim dari barang luar
+        ['akbar', 'nesa', 'andin', 'ritza'].forEach((k) => {
+          const cPct = custom?.[k] !== undefined ? Number(custom[k]) : 5;
+          const cHak = it.profitSharing?.[k] !== undefined
+            ? Number(it.profitSharing[k])
+            : (k === 'nesa' && it.profitSharing?.nessa !== undefined
+              ? Number(it.profitSharing.nessa)
+              : Math.round((profit * cPct) / 100));
+
+          row[k] = (row[k] || 0) + cHak;
+          if (k === 'nesa') row.nessa = (row.nessa || 0) + cHak;
+          if (k === 'akbar') row.muhbar = (row.muhbar || 0) + cHak;
+        });
+      }
+    });
+  } else {
+    // Single item legacy
+    const owner = tx.ownerName || tx.owner || '';
+    const tk = getTeamMemberKey(owner);
+    const sell = Number(tx.sellingPrice || 0);
+    const cost = Number(tx.costPrice || 0);
+    const profit = Number(tx.profit !== undefined ? tx.profit : sell - cost);
+
+    const custom = tx.skemaCustom || tx.ownerCustomScheme;
+
+    if (tk) {
+      const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
+      const opsPct = custom?.operational !== undefined ? Number(custom.operational) : 15;
+
+      const hak = tx.profitSharing?.[tk] !== undefined && Number(tx.profitSharing[tk]) > 0
+        ? Number(tx.profitSharing[tk])
+        : (tx.profitSharing?.pemilikBarang !== undefined
+          ? Number(tx.profitSharing.pemilikBarang)
+          : Math.round((profit * pct) / 100));
+
+      const opsHak = tx.profitSharing?.operational !== undefined
+        ? Number(tx.profitSharing.operational)
+        : (tx.profitSharing?.operasional !== undefined
+          ? Number(tx.profitSharing.operasional)
+          : Math.round((profit * opsPct) / 100));
+
+      row[tk] = (row[tk] || 0) + hak;
+      if (tk === 'nesa') row.nessa = (row.nessa || 0) + hak;
+      if (tk === 'nessa') row.nesa = (row.nesa || 0) + hak;
+      if (tk === 'akbar') row.muhbar = (row.muhbar || 0) + hak;
+
+      row.operational += opsHak;
+      row.operasional += opsHak;
+    } else {
+      const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 70;
+      const opsPct = custom?.operational !== undefined ? Number(custom.operational) : 10;
+
+      const hak = tx.profitSharing?.pemilikBarang !== undefined
+        ? Number(tx.profitSharing.pemilikBarang)
+        : Math.round((profit * pct) / 100);
+
+      const opsHak = tx.profitSharing?.operational !== undefined
+        ? Number(tx.profitSharing.operational)
+        : (tx.profitSharing?.operasional !== undefined
+          ? Number(tx.profitSharing.operasional)
+          : Math.round((profit * opsPct) / 100));
+
+      row.pemilikBarang += hak;
+      row.operational += opsHak;
+      row.operasional += opsHak;
+
+      ['akbar', 'nesa', 'andin', 'ritza'].forEach((k) => {
+        const cPct = custom?.[k] !== undefined ? Number(custom[k]) : 5;
+        const cHak = tx.profitSharing?.[k] !== undefined
+          ? Number(tx.profitSharing[k])
+          : (k === 'nesa' && tx.profitSharing?.nessa !== undefined
+            ? Number(tx.profitSharing.nessa)
+            : Math.round((profit * cPct) / 100));
+
+        row[k] = (row[k] || 0) + cHak;
+        if (k === 'nesa') row.nessa = (row.nessa || 0) + cHak;
+        if (k === 'akbar') row.muhbar = (row.muhbar || 0) + cHak;
+      });
+    }
+  }
+
+  return row;
+}
+
+/**
+ * Mendapatkan informasi badge skema untuk satu transaksi
+ * @param {object} tx
+ * @returns {object} { label, className }
+ */
+export function getTransactionSchemeBadge(tx) {
+  if (!tx) {
+    return {
+      label: '🌐 Standar (70%)',
+      className: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+    };
+  }
+
+  if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+    let hasTeam = false;
+    let hasExternal = false;
+    let hasCustomNonStandard = false;
+    let customDesc = '';
+
+    tx.items.forEach((it) => {
+      const owner = it.ownerName || tx.ownerName || '';
+      const isTeam = Boolean(getTeamMemberKey(owner));
+      const custom = it.skemaCustom || tx.skemaCustom || tx.ownerCustomScheme;
+
+      if (isTeam) {
+        hasTeam = true;
+      } else {
+        hasExternal = true;
+      }
+
+      if (custom && custom.pemilikBarang !== 85 && custom.pemilikBarang !== 70) {
+        hasCustomNonStandard = true;
+        customDesc = `${custom.pemilikBarang}% / ${custom.operational}% Ops`;
+      }
+    });
+
+    if (hasCustomNonStandard) {
+      return {
+        label: `⚡ ${customDesc}`,
+        className: 'bg-purple-500/15 text-purple-300 border border-purple-500/20',
+      };
+    }
+
+    if (hasTeam && hasExternal) {
+      return {
+        label: '⚡ Campuran (85% Tim / 70% Luar)',
+        className: 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 font-bold',
+      };
+    }
+
+    if (hasTeam) {
+      return {
+        label: '⚡ 85% / 15% Ops (Tim)',
+        className: 'bg-purple-500/15 text-purple-300 border border-purple-500/20 font-bold',
+      };
+    }
+
+    return {
+      label: '🌐 Standar (70% Penitip)',
+      className: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+    };
+  }
+
+  // Single item
+  const owner = tx.ownerName || tx.owner || '';
+  const isTeam = Boolean(getTeamMemberKey(owner));
+  const custom = tx.skemaCustom || tx.ownerCustomScheme;
+
+  if (custom) {
+    return {
+      label: `⚡ ${custom.pemilikBarang}% / ${custom.operational}% Ops`,
+      className: 'bg-purple-500/15 text-purple-300 border border-purple-500/20 font-bold',
+    };
+  }
+
+  if (isTeam) {
+    return {
+      label: '⚡ 85% / 15% Ops (Tim)',
+      className: 'bg-purple-500/15 text-purple-300 border border-purple-500/20 font-bold',
+    };
+  }
+
+  return {
+    label: '🌐 Standar (70% Penitip)',
+    className: 'bg-blue-500/10 text-blue-400 border border-blue-500/20',
+  };
+}
+
+/**
  * Menghitung total pembagian dari array transaksi
  * @param {Array} transactions - Array of transaction objects
  * @param {object} [customConfig] - Konfigurasi persentase dinamis (opsional)
@@ -50,88 +299,40 @@ export function calculateProfitSharing(sellingPrice, costPrice, customConfig = P
  */
 export function calculateTotalSharing(transactions, customConfig = PROFIT_SHARING_CONFIG) {
   const configToUse = customConfig || PROFIT_SHARING_CONFIG;
-  const totals = {};
+  const totals = {
+    pemilikBarang: 0,
+    operational: 0,
+    operasional: 0,
+    akbar: 0,
+    muhbar: 0,
+    nesa: 0,
+    nessa: 0,
+    andin: 0,
+    ritza: 0,
+  };
+
   Object.keys(configToUse).forEach((key) => {
-    totals[key] = 0;
+    if (totals[key] === undefined) totals[key] = 0;
   });
 
-  transactions.forEach((tx) => {
+  (transactions || []).forEach((tx) => {
     if (tx.status !== 'Terjual') return;
 
-    if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
-      tx.items.forEach((it) => {
-        const owner = it.ownerName || tx.ownerName || '';
-        const tk = getTeamMemberKey(owner);
-        const sell = Number(it.sellingPrice || 0);
-        const profit = Number(it.profit !== undefined ? it.profit : sell);
+    const row = getRowProfitSharing(tx, configToUse);
 
-        if (tk && totals[tk] !== undefined) {
-          // Barang pribadi anggota tim (85% atau skema custom yang tersimpan)
-          const custom = it.skemaCustom || tx.skemaCustom;
-          const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
-          const hak = it.profitSharing?.pemilikBarang !== undefined
-            ? Number(it.profitSharing.pemilikBarang)
-            : Math.round((profit * pct) / 100);
-          totals[tk] += hak;
-        } else {
-          // Barang penitip eksternal (70%)
-          const hak = it.profitSharing?.pemilikBarang !== undefined
-            ? Number(it.profitSharing.pemilikBarang)
-            : Math.round(profit * 0.70);
-          totals.pemilikBarang += hak;
-        }
-      });
-    } else {
-      const owner = tx.ownerName || tx.owner || '';
-      const tk = getTeamMemberKey(owner);
-      const sell = Number(tx.sellingPrice || 0);
-      const profit = Number(tx.profit !== undefined ? tx.profit : sell);
+    totals.pemilikBarang += (row.pemilikBarang || 0);
+    totals.operational += (row.operational || 0);
+    totals.operasional += (row.operational || 0);
 
-      if (tk && totals[tk] !== undefined) {
-        const custom = tx.skemaCustom || tx.ownerCustomScheme;
-        const pct = custom?.pemilikBarang !== undefined ? Number(custom.pemilikBarang) : 85;
-        const hak = tx.profitSharing?.pemilikBarang !== undefined
-          ? Number(tx.profitSharing.pemilikBarang)
-          : Math.round((profit * pct) / 100);
-        totals[tk] += hak;
-      } else {
-        const hak = tx.profitSharing?.pemilikBarang !== undefined
-          ? Number(tx.profitSharing.pemilikBarang)
-          : Math.round(profit * 0.70);
-        totals.pemilikBarang += hak;
-      }
-    }
+    totals.akbar += (row.akbar || 0);
+    totals.muhbar += (row.akbar || 0);
 
-    // Tambahkan Operasional dan Komisi Tim 5% dari penjualan penitip eksternal
-    if (tx.profitSharing) {
-      totals.operational += Number(tx.profitSharing.operational || tx.profitSharing.operasional || 0);
-      if (totals.akbar !== undefined) totals.akbar += Number(tx.profitSharing.akbar || 0);
-      if (totals.nesa !== undefined) totals.nesa += Number(tx.profitSharing.nesa || tx.profitSharing.nessa || 0);
-      if (totals.andin !== undefined) totals.andin += Number(tx.profitSharing.andin || 0);
-      if (totals.ritza !== undefined) totals.ritza += Number(tx.profitSharing.ritza || 0);
-    }
+    totals.nesa += (row.nesa || 0);
+    totals.nessa += (row.nesa || 0);
+
+    totals.andin += (row.andin || 0);
+    totals.ritza += (row.ritza || 0);
   });
-
-  // Mirror aliases so either key works seamlessly
-  if (totals.nesa !== undefined && totals.nessa !== undefined) {
-    const maxNesa = Math.max(totals.nesa, totals.nessa);
-    totals.nesa = maxNesa;
-    totals.nessa = maxNesa;
-  } else if (totals.nesa !== undefined) {
-    totals.nessa = totals.nesa;
-  } else if (totals.nessa !== undefined) {
-    totals.nesa = totals.nessa;
-  }
-
-  if (totals.operational !== undefined && totals.operasional !== undefined) {
-    const maxOps = Math.max(totals.operational, totals.operasional);
-    totals.operational = maxOps;
-    totals.operasional = maxOps;
-  } else if (totals.operational !== undefined) {
-    totals.operasional = totals.operational;
-  } else if (totals.operasional !== undefined) {
-    totals.operational = totals.operasional;
-  }
 
   return totals;
 }
@@ -183,6 +384,8 @@ export function calculateItemProfitAndSharing(item, globalConfig = PROFIT_SHARIN
   const configToUse = globalConfig || PROFIT_SHARING_CONFIG;
   let schemeToUse = configToUse;
   const customScheme = item.skemaCustom || item.ownerCustomScheme;
+  const rawOwner = (item.ownerName || item.owner || '').trim();
+  const tk = getTeamMemberKey(rawOwner);
 
   if (customScheme) {
     schemeToUse = {};
@@ -199,28 +402,30 @@ export function calculateItemProfitAndSharing(item, globalConfig = PROFIT_SHARIN
         percentage: Number(pct || 0),
       };
     });
+  } else if (tk) {
+    // Otomatisasi Skema Berdasarkan Pemilik Barang Anggota Tim:
+    // 85% Pemilik, 15% Ops, 0% Komisi
+    schemeToUse = {
+      pemilikBarang: { percentage: 85, label: 'Pemilik Barang' },
+      operational: { percentage: 15, label: 'Operational' },
+      akbar: { percentage: 0, label: 'Akbar' },
+      nesa: { percentage: 0, label: 'Nessa' },
+      andin: { percentage: 0, label: 'Andin' },
+      ritza: { percentage: 0, label: 'Ritza' },
+    };
   } else {
-    // Otomatisasi Skema Berdasarkan Pemilik Barang:
-    // Jika Pemilik Barang adalah Anggota Tim (Akbar, Nessa, Andin, Ritza) -> Skema 85% Pemilik, 15% Ops, 0% Komisi
-    // Jika Pemilik Barang adalah Penitip Luar (Atun, Bilah, dll) -> Skema Standar 70% Pemilik, 10% Ops, 5% Tim
-    const rawOwner = (item.ownerName || item.owner || '').trim().toLowerCase();
-    const isTeam = Boolean(getTeamMemberKey(rawOwner));
-
-    if (isTeam) {
-      schemeToUse = {
-        pemilikBarang: { percentage: 85, label: 'Pemilik Barang' },
-        operational: { percentage: 15, label: 'Operational' },
-        akbar: { percentage: 0, label: 'Akbar' },
-        nesa: { percentage: 0, label: 'Nessa' },
-        andin: { percentage: 0, label: 'Andin' },
-        ritza: { percentage: 0, label: 'Ritza' },
-      };
-    } else {
-      schemeToUse = configToUse;
-    }
+    schemeToUse = configToUse;
   }
 
   const { sharing } = calculateProfitSharing(selling, cost, schemeToUse);
+
+  // Jika pemilik adalah anggota tim, tetapkan hak barang pribadi langsung ke kunci anggota tim
+  if (tk && sharing.pemilikBarang > 0) {
+    sharing[tk] = sharing.pemilikBarang;
+    if (tk === 'nesa') sharing.nessa = sharing.pemilikBarang;
+    if (tk === 'akbar') sharing.muhbar = sharing.pemilikBarang;
+  }
+
   return { profit, sharing };
 }
 
@@ -235,10 +440,20 @@ export function calculateOrderTotals(items = [], globalConfig = PROFIT_SHARING_C
   let totalSelling = 0;
   let totalCost = 0;
   let totalProfit = 0;
-  const totalSharing = {};
+  const totalSharing = {
+    pemilikBarang: 0,
+    operational: 0,
+    operasional: 0,
+    akbar: 0,
+    muhbar: 0,
+    nesa: 0,
+    nessa: 0,
+    andin: 0,
+    ritza: 0,
+  };
 
   Object.keys(configToUse).forEach((key) => {
-    totalSharing[key] = 0;
+    if (totalSharing[key] === undefined) totalSharing[key] = 0;
   });
 
   const calculatedItems = (items || []).map((item) => {
@@ -250,9 +465,31 @@ export function calculateOrderTotals(items = [], globalConfig = PROFIT_SHARING_C
     totalCost += cost;
     totalProfit += profit;
 
-    Object.keys(configToUse).forEach((key) => {
-      totalSharing[key] += getPsValue(sharing, key);
-    });
+    const owner = item.ownerName || item.owner || '';
+    const tk = getTeamMemberKey(owner);
+
+    if (tk) {
+      // Hak barang pribadi anggota tim masuk ke kolom anggota tim yang bersangkutan
+      const hak = sharing[tk] !== undefined ? sharing[tk] : (sharing.pemilikBarang || 0);
+      totalSharing[tk] = (totalSharing[tk] || 0) + hak;
+      if (tk === 'nesa') totalSharing.nessa = (totalSharing.nessa || 0) + hak;
+      if (tk === 'akbar') totalSharing.muhbar = (totalSharing.muhbar || 0) + hak;
+    } else {
+      // Barang milik penitip luar masuk ke pemilikBarang
+      totalSharing.pemilikBarang += (sharing.pemilikBarang || 0);
+
+      // Komisi tim dari penitip luar
+      ['akbar', 'nesa', 'andin', 'ritza'].forEach((k) => {
+        const cHak = getPsValue(sharing, k);
+        totalSharing[k] = (totalSharing[k] || 0) + cHak;
+        if (k === 'nesa') totalSharing.nessa = (totalSharing.nessa || 0) + cHak;
+        if (k === 'akbar') totalSharing.muhbar = (totalSharing.muhbar || 0) + cHak;
+      });
+    }
+
+    const opsHak = getPsValue(sharing, 'operational');
+    totalSharing.operational += opsHak;
+    totalSharing.operasional += opsHak;
 
     return {
       ...item,

@@ -8,6 +8,7 @@ import {
   PAYMENT_METHODS,
   ORDER_SOURCES,
   SHIPPING_COURIERS,
+  getTeamMemberKey,
 } from '../../constants/profitSharingConfig';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { useOwners } from '../../context/OwnerContext';
@@ -17,7 +18,16 @@ import { useInventory } from '../../context/InventoryContext';
 import { calculateOrderTotals, calculateItemProfitAndSharing } from '../../utils/calculateProfitSharing';
 import toast from 'react-hot-toast';
 
-const defaultCustomPercentages = {
+export const TEAM_TEMPLATE_SCHEME = {
+  pemilikBarang: 85,
+  operational: 15,
+  akbar: 0,
+  nesa: 0,
+  andin: 0,
+  ritza: 0,
+};
+
+export const defaultCustomPercentages = {
   pemilikBarang: 70,
   operational: 10,
   akbar: 5,
@@ -26,11 +36,52 @@ const defaultCustomPercentages = {
   ritza: 5,
 };
 
+export function getSchemeForOwner(ownerName, ownersList = []) {
+  if (!ownerName) {
+    return { isCustom: false, scheme: { ...defaultCustomPercentages } };
+  }
+
+  const cleanName = String(ownerName).trim().toLowerCase();
+
+  // 1. Cek pengaturan customScheme yang tersimpan di kelola pemilik
+  const ownerObj = ownersList.find((o) => (o.name || '').trim().toLowerCase() === cleanName);
+  if (ownerObj?.isCustomScheme && ownerObj.customScheme) {
+    return {
+      isCustom: true,
+      scheme: {
+        pemilikBarang: Number(ownerObj.customScheme.pemilikBarang ?? 85),
+        operational: Number(ownerObj.customScheme.operational ?? 15),
+        akbar: Number(ownerObj.customScheme.akbar ?? 0),
+        nesa: Number(ownerObj.customScheme.nesa ?? (ownerObj.customScheme.nessa ?? 0)),
+        andin: Number(ownerObj.customScheme.andin ?? 0),
+        ritza: Number(ownerObj.customScheme.ritza ?? 0),
+      },
+    };
+  }
+
+  // 2. Jika nama adalah anggota tim Fitbay (Akbar, Nesa/Nessa, Andin, Ritza, Muhbar)
+  // Otomatis terapkan template 85% Pemilik (Tim) & 15% Operasional
+  const isTeam = Boolean(getTeamMemberKey(cleanName));
+  if (isTeam) {
+    return {
+      isCustom: true,
+      scheme: { ...TEAM_TEMPLATE_SCHEME },
+    };
+  }
+
+  // 3. Default penitip luar: skema standar 70/10/20
+  return {
+    isCustom: false,
+    scheme: { ...defaultCustomPercentages },
+  };
+}
+
 function generateItemId() {
   return `item_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 }
 
-function createDefaultItem(defaultOwner = 'Akbar') {
+function createDefaultItem(defaultOwner = 'Akbar', ownersList = []) {
+  const { isCustom, scheme } = getSchemeForOwner(defaultOwner, ownersList);
   return {
     id: generateItemId(),
     itemName: '',
@@ -40,8 +91,8 @@ function createDefaultItem(defaultOwner = 'Akbar') {
     sellingPrice: '',
     kodeBarang: '',
     inventoryItemId: null,
-    isCustomScheme: false,
-    customPercentages: { ...defaultCustomPercentages },
+    isCustomScheme: isCustom,
+    customPercentages: scheme,
   };
 }
 
@@ -141,7 +192,7 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
       setEkspedisi('J&T Express');
       setResi('');
       setCatatanPengiriman('');
-      setItems([createDefaultItem(firstOwner)]);
+      setItems([createDefaultItem(firstOwner, owners)]);
     }
 
     setItemErrors({});
@@ -159,7 +210,17 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
   const handleItemChange = (index, field, value) => {
     setItems((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
+      if (field === 'ownerName') {
+        const { isCustom, scheme } = getSchemeForOwner(value, owners);
+        updated[index] = {
+          ...updated[index],
+          ownerName: value,
+          isCustomScheme: isCustom,
+          customPercentages: scheme,
+        };
+      } else {
+        updated[index] = { ...updated[index], [field]: value };
+      }
       return updated;
     });
 
@@ -179,28 +240,20 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
     if (selected) {
       setItems((prev) => {
         const updated = [...prev];
-        const ownerObj = owners.find(
-          (o) => o.name.toLowerCase() === (selected.pemilikBarang || '').toLowerCase()
-        );
-
-        let customPct = { ...defaultCustomPercentages };
-        let isCustom = false;
-        if (ownerObj?.isCustomScheme && ownerObj.customScheme) {
-          isCustom = true;
-          customPct = { ...ownerObj.customScheme };
-        }
+        const ownerName = selected.pemilikBarang || owners[0]?.name || 'Akbar';
+        const { isCustom, scheme } = getSchemeForOwner(ownerName, owners);
 
         updated[index] = {
           ...updated[index],
           itemName: selected.namaBarang || '',
           category: selected.kategori || 'Baju',
-          ownerName: selected.pemilikBarang || owners[0]?.name || 'Akbar',
+          ownerName: ownerName,
           costPrice: String(selected.hargaModal || 0),
           sellingPrice: selected.hargaJual ? String(selected.hargaJual) : (selected.sellingPrice ? String(selected.sellingPrice) : updated[index].sellingPrice || ''),
           kodeBarang: selected.kodeBarang || '',
           inventoryItemId: selected.id,
           isCustomScheme: isCustom,
-          customPercentages: customPct,
+          customPercentages: scheme,
         };
         return updated;
       });
@@ -223,7 +276,7 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
   // Add new item row
   const handleAddItem = () => {
     const firstOwner = owners[0]?.name || 'Akbar';
-    setItems((prev) => [...prev, createDefaultItem(firstOwner)]);
+    setItems((prev) => [...prev, createDefaultItem(firstOwner, owners)]);
   };
 
   // Remove item row
@@ -312,17 +365,14 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
       if (it.isCustomScheme) {
         customScheme = it.customPercentages;
       } else {
-        const ownerObj = owners.find(
-          (o) => o.name.toLowerCase() === (it.ownerName || '').toLowerCase()
-        );
-        if (ownerObj?.isCustomScheme && ownerObj.customScheme) {
-          customScheme = ownerObj.customScheme;
-        }
+        const { isCustom, scheme } = getSchemeForOwner(it.ownerName, owners);
+        if (isCustom) customScheme = scheme;
       }
       return {
         ...it,
         costPrice: Number(it.costPrice || 0),
         sellingPrice: Number(it.sellingPrice || 0),
+        ownerName: (it.ownerName || '').trim(),
         skemaCustom: customScheme,
       };
     });
@@ -388,18 +438,15 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
         if (it.isCustomScheme) {
           customScheme = it.customPercentages;
         } else {
-          const ownerObj = owners.find(
-            (o) => o.name.toLowerCase() === (it.ownerName || '').toLowerCase()
-          );
-          if (ownerObj?.isCustomScheme && ownerObj.customScheme) {
-            customScheme = ownerObj.customScheme;
-          }
+          const { isCustom, scheme } = getSchemeForOwner(it.ownerName, owners);
+          if (isCustom) customScheme = scheme;
         }
 
         const { profit, sharing } = calculateItemProfitAndSharing(
           {
             sellingPrice: Number(it.sellingPrice),
             costPrice: Number(it.costPrice || 0),
+            ownerName: (it.ownerName || '').trim(),
             skemaCustom: customScheme,
           },
           profitSharingConfig
@@ -420,9 +467,27 @@ export default function SalesFormModal({ isOpen, onClose, onSubmit, editData }) 
         };
       });
 
+      // Simpan skemaCustom di root jika semua item seragam (misal 85/15%)
+      let rootSkemaCustom = null;
+      if (finalItemsPayload.length > 0) {
+        const firstSkema = finalItemsPayload[0].skemaCustom;
+        const allSame = finalItemsPayload.every((it) => {
+          if (!firstSkema && !it.skemaCustom) return true;
+          if (!firstSkema || !it.skemaCustom) return false;
+          return (
+            it.skemaCustom.pemilikBarang === firstSkema.pemilikBarang &&
+            it.skemaCustom.operational === firstSkema.operational
+          );
+        });
+        if (allSame && firstSkema) {
+          rootSkemaCustom = firstSkema;
+        }
+      }
+
       await onSubmit({
         date,
         items: finalItemsPayload,
+        skemaCustom: rootSkemaCustom,
         paymentMethod,
         sumberPesanan: sumberPesanan || 'WhatsApp',
         status,
