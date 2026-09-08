@@ -20,12 +20,12 @@ function getTestimonialsRef() {
 
 /**
  * Mengambil daftar testimoni publik yang sudah disetujui admin
- * Dilengkapi fallback client-side sort jika composite index Firestore belum dibuat.
+ * Mendukung query langsung Firestore dengan fallback otomatis ke /api/testimonials
  * @returns {Promise<Array>}
  */
 export async function getPublicTestimonials() {
   try {
-    // Coba query dengan orderBy
+    // 1. Coba query Firestore Client SDK dengan orderBy
     try {
       const q = query(
         getTestimonialsRef(),
@@ -35,7 +35,7 @@ export async function getPublicTestimonials() {
       const snap = await getDocs(q);
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     } catch (orderErr) {
-      console.warn('Query dengan orderBy perlu index atau gagal, fallback ke filter status + client sort:', orderErr);
+      console.warn('Query dengan orderBy gagal, coba filter status sederhana:', orderErr);
       const qFallback = query(
         getTestimonialsRef(),
         where('status', '==', 'disetujui')
@@ -50,9 +50,23 @@ export async function getPublicTestimonials() {
         return timeB - timeA;
       });
     }
-  } catch (error) {
-    console.error('Error fetching public testimonials:', error);
-    throw error;
+  } catch (firestoreErr) {
+    console.warn('Query Firestore langsung gagal (kemungkinan rules belum di-publish), fallback ke /api/testimonials:', firestoreErr);
+
+    // 2. Fallback ke endpoint serverless Vercel /api/testimonials
+    try {
+      const res = await fetch('/api/testimonials');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.testimonials)) {
+          return json.testimonials;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('Fallback ke /api/testimonials juga gagal:', apiErr);
+    }
+
+    throw new Error('Gagal memuat daftar testimoni. Pastikan aturan keamanan Firestore sudah diperbarui di Firebase Console.');
   }
 }
 
@@ -94,7 +108,8 @@ export function subscribeAdminTestimonials(callback, onError) {
 
 /**
  * Mengirim ulasan dari publik (Unauthenticated)
- * Wajib: status='menunggu', sumber='publik'
+ * Mendukung pengiriman melalui /api/testimonials (Firebase Admin SDK di server Vercel)
+ * dengan fallback ke client-side Firestore addDoc.
  * @param {object} payload
  * @returns {Promise<object>}
  */
@@ -104,6 +119,7 @@ export async function submitPublicTestimonial({
   rating,
   namaBarang = '',
   fotoUrl = '',
+  honeypot = '',
 }) {
   const cleanNama = (namaPembeli || '').trim().slice(0, 50);
   const cleanIsi = (isiTestimoni || '').trim().slice(0, 500);
@@ -119,21 +135,64 @@ export async function submitPublicTestimonial({
     throw new Error('Isi ulasan minimal 5 karakter.');
   }
 
-  const newDoc = {
+  const payload = {
     namaPembeli: cleanNama,
     isiTestimoni: cleanIsi,
     rating: cleanRating,
     namaBarang: cleanBarang,
     fotoUrl: fotoUrl || '',
-    tanggal: dateStr,
-    sumber: 'publik',
-    status: 'menunggu', // Wajib menunggu persetujuan
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
+    honeypot: honeypot || '',
   };
 
-  const docRef = await addDoc(getTestimonialsRef(), newDoc);
-  return { id: docRef.id, ...newDoc };
+  // 1. Coba kirim via Serverless API /api/testimonials terlebih dahulu (Bypass client rules via Admin SDK)
+  try {
+    const res = await fetch('/api/testimonials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    } else if (res.status === 400 || res.status === 429) {
+      const errorJson = await res.json().catch(() => ({}));
+      throw new Error(errorJson.message || 'Gagal mengirim testimoni.');
+    }
+  } catch (apiErr) {
+    // Jika ada error spesifik dari validasi / rate limit di serverless, teruskan errornya
+    if (apiErr.message && !apiErr.message.includes('Failed to fetch') && !apiErr.message.includes('404')) {
+      throw apiErr;
+    }
+    console.warn('Kirim via /api/testimonials gagal atau tidak tersedia (misal di localhost), fallback ke client Firestore SDK:', apiErr);
+  }
+
+  // 2. Fallback ke Direct Client Firestore addDoc
+  try {
+    const newDoc = {
+      namaPembeli: cleanNama,
+      isiTestimoni: cleanIsi,
+      rating: cleanRating,
+      namaBarang: cleanBarang,
+      fotoUrl: fotoUrl || '',
+      tanggal: dateStr,
+      sumber: 'publik',
+      status: 'menunggu', // Wajib menunggu persetujuan
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    const docRef = await addDoc(getTestimonialsRef(), newDoc);
+    return { id: docRef.id, ...newDoc };
+  } catch (firestoreErr) {
+    console.error('Error direct client addDoc:', firestoreErr);
+    if (firestoreErr.code === 'permission-denied' || firestoreErr.message?.includes('permission')) {
+      throw new Error(
+        'Izin pengiriman ulasan ditolak oleh database. Pastikan Firestore Security Rules sudah dipublikasikan di Firebase Console.'
+      );
+    }
+    throw new Error(firestoreErr.message || 'Gagal mengirim ulasan ke database.');
+  }
 }
 
 /**
@@ -169,8 +228,18 @@ export async function createAdminTestimonial({
     updatedAt: now.toISOString(),
   };
 
-  const docRef = await addDoc(getTestimonialsRef(), newDoc);
-  return { id: docRef.id, ...newDoc };
+  try {
+    const docRef = await addDoc(getTestimonialsRef(), newDoc);
+    return { id: docRef.id, ...newDoc };
+  } catch (err) {
+    console.error('Error createAdminTestimonial:', err);
+    if (err.code === 'permission-denied' || err.message?.includes('permission')) {
+      throw new Error(
+        'Izin ditolak oleh Firestore. Pastikan Firestore Security Rules sudah dipublikasikan di Firebase Console untuk role admin.'
+      );
+    }
+    throw err;
+  }
 }
 
 /**
