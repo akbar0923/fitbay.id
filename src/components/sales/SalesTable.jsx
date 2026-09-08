@@ -19,6 +19,7 @@ import Modal from '../ui/Modal';
 import ShippingLabelModal from './ShippingLabelModal';
 import BulkEditSalesModal from './BulkEditSalesModal';
 import MergeSalesModal from './MergeSalesModal';
+import RequestTestimonialModal from './RequestTestimonialModal';
 import BulkActionBar from '../common/BulkActionBar';
 import toast from 'react-hot-toast';
 
@@ -63,6 +64,7 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   const [filterPaymentMethod, setFilterPaymentMethod] = useState('');
   const [filterSource, setFilterSource] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterTestimonialStatus, setFilterTestimonialStatus] = useState('');
   const [filterDateStart, setFilterDateStart] = useState('');
   const [filterDateEnd, setFilterDateEnd] = useState('');
   const [sortBy, setSortBy] = useState('date');
@@ -73,6 +75,15 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
   // State Cetak Label Pengiriman
   const [selectedShippingTx, setSelectedShippingTx] = useState(null);
   const [isShippingModalOpen, setIsShippingModalOpen] = useState(false);
+
+  // State Minta Testimoni Pembeli
+  const [selectedTestimonialTx, setSelectedTestimonialTx] = useState(null);
+  const [isTestimonialModalOpen, setIsTestimonialModalOpen] = useState(false);
+
+  const handleOpenTestimonialModal = (tx) => {
+    setSelectedTestimonialTx(tx);
+    setIsTestimonialModalOpen(true);
+  };
 
   const handleOpenShippingModal = (tx) => {
     setSelectedShippingTx(tx);
@@ -222,6 +233,15 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
       data = data.filter((tx) => tx.status === filterStatus);
     }
 
+    // Filter status testimoni
+    if (filterTestimonialStatus) {
+      if (filterTestimonialStatus === 'belum_diminta') {
+        data = data.filter((tx) => tx.status === 'Terjual' && (!tx.statusTestimoni || tx.statusTestimoni === 'belum_diminta'));
+      } else {
+        data = data.filter((tx) => tx.status === 'Terjual' && tx.statusTestimoni === filterTestimonialStatus);
+      }
+    }
+
     // Filter date range
     if (filterDateStart) {
       data = data.filter((tx) => tx.date >= filterDateStart);
@@ -247,7 +267,7 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
     });
 
     return data;
-  }, [transactions, search, filterOwner, filterCategory, filterPaymentMethod, filterStatus, filterDateStart, filterDateEnd, sortBy, sortDir]);
+  }, [transactions, search, filterOwner, filterCategory, filterPaymentMethod, filterStatus, filterTestimonialStatus, filterDateStart, filterDateEnd, sortBy, sortDir]);
 
   const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
   const paginatedData = filteredData.slice((page - 1) * pageSize, page * pageSize);
@@ -273,12 +293,13 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
     setFilterCategory('');
     setFilterPaymentMethod('');
     setFilterStatus('');
+    setFilterTestimonialStatus('');
     setFilterDateStart('');
     setFilterDateEnd('');
     setPage(1);
   };
 
-  const hasFilters = search || filterOwner || filterCategory || filterPaymentMethod || filterStatus || filterDateStart || filterDateEnd;
+  const hasFilters = search || filterOwner || filterCategory || filterPaymentMethod || filterStatus || filterTestimonialStatus || filterDateStart || filterDateEnd;
 
   if (loading) return <SkeletonTable rows={5} />;
 
@@ -384,10 +405,26 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                 bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke-width%3D%221.5%22%20stroke%3D%22%239ca3af%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22m19.5%208.25-7.5%207.5-7.5-7.5%22%20%2F%3E%3C%2Fsvg%3E')]
                 bg-[length:20px] bg-[right_12px_center] bg-no-repeat pr-10"
             >
-              <option value="">Semua Status</option>
+              <option value="">Semua Status Transaksi</option>
               {TRANSACTION_STATUSES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
+            </select>
+
+            {/* Filter Status Testimoni */}
+            <select
+              value={filterTestimonialStatus}
+              onChange={(e) => { setFilterTestimonialStatus(e.target.value); setPage(1); }}
+              className="px-4 py-2.5 rounded-xl text-sm dark:bg-surface-300 bg-white 
+                dark:text-white text-gray-900 dark:border-white/10 border-gray-300 border
+                focus:outline-none focus:ring-2 focus:ring-accent/50 appearance-none cursor-pointer
+                bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2024%2024%22%20stroke-width%3D%221.5%22%20stroke%3D%22%239ca3af%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22m19.5%208.25-7.5%207.5-7.5-7.5%22%20%2F%3E%3C%2Fsvg%3E')]
+                bg-[length:20px] bg-[right_12px_center] bg-no-repeat pr-10"
+            >
+              <option value="">Semua Status Testimoni</option>
+              <option value="belum_diminta">Belum Diminta</option>
+              <option value="sudah_diminta">⏳ Sudah Diminta</option>
+              <option value="sudah_diisi">⭐ Testimoni Diisi</option>
             </select>
 
             {/* Date Range */}
@@ -632,10 +669,50 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                             </span>
                           </td>
                           <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                            <Badge status={tx.status} />
+                            <div className="flex flex-col items-center gap-1">
+                              <Badge status={tx.status} />
+                              {tx.status === 'Terjual' && (
+                                <>
+                                  {tx.statusTestimoni === 'sudah_diisi' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                      <span>⭐</span>
+                                      <span>Testimoni Diisi</span>
+                                    </span>
+                                  ) : tx.statusTestimoni === 'sudah_diminta' ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                      <span>⏳</span>
+                                      <span>Sudah Diminta</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                                      Belum Diminta
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3.5 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1">
+                              {/* Tombol Minta Testimoni (Khusus transaksi Terjual) */}
+                              {tx.status === 'Terjual' && (
+                                <button
+                                  onClick={() => handleOpenTestimonialModal(tx)}
+                                  className={`p-2 rounded-lg transition-all duration-200 ${
+                                    tx.statusTestimoni === 'sudah_diisi'
+                                      ? 'text-emerald-400 hover:text-emerald-300 dark:hover:bg-emerald-500/10 hover:bg-emerald-50'
+                                      : 'text-amber-400 hover:text-amber-300 dark:hover:bg-amber-500/10 hover:bg-amber-50'
+                                  }`}
+                                  title={
+                                    tx.statusTestimoni === 'sudah_diisi'
+                                      ? 'Testimoni sudah diisi oleh pembeli'
+                                      : 'Minta Testimoni Pembeli (Salin Link / WhatsApp)'
+                                  }
+                                >
+                                  <span className="text-sm">⭐</span>
+                                </button>
+                              )}
+
                               {/* Tombol Cetak Label Pengiriman / Struk */}
                               <button
                                 onClick={() => handleOpenShippingModal(tx)}
@@ -802,6 +879,23 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <Badge status={tx.status} />
+                      {tx.status === 'Terjual' && (
+                        <>
+                          {tx.statusTestimoni === 'sudah_diisi' ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              ⭐ Ulasan Diisi
+                            </span>
+                          ) : tx.statusTestimoni === 'sudah_diminta' ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              ⏳ Sudah Diminta
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                              Belum Diminta
+                            </span>
+                          )}
+                        </>
+                      )}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${sourceColor.bg} ${sourceColor.text}`}>
                         {sourceColor.icon} {tx.sumberPesanan || 'WhatsApp'}
                       </span>
@@ -884,18 +978,34 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t dark:border-white/5 border-gray-100">
-                    <button
-                      onClick={() => handleOpenShippingModal(tx)}
-                      className={`px-3 py-1.5 text-xs rounded-xl font-bold flex items-center gap-1.5 ${
-                        isShopee
-                          ? 'dark:bg-white/5 bg-gray-100 dark:text-gray-400 text-gray-600'
-                          : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                      }`}
-                    >
-                      <span>🖨️</span>
-                      <span>{isShopee ? 'Struk' : 'Cetak Label'}</span>
-                    </button>
+                  <div className="flex items-center justify-between pt-2 border-t dark:border-white/5 border-gray-100 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleOpenShippingModal(tx)}
+                        className={`px-3 py-1.5 text-xs rounded-xl font-bold flex items-center gap-1.5 ${
+                          isShopee
+                            ? 'dark:bg-white/5 bg-gray-100 dark:text-gray-400 text-gray-600'
+                            : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        }`}
+                      >
+                        <span>🖨️</span>
+                        <span>{isShopee ? 'Struk' : 'Cetak Label'}</span>
+                      </button>
+
+                      {tx.status === 'Terjual' && (
+                        <button
+                          onClick={() => handleOpenTestimonialModal(tx)}
+                          className={`px-3 py-1.5 text-xs rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+                            tx.statusTestimoni === 'sudah_diisi'
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                          }`}
+                        >
+                          <span>⭐</span>
+                          <span>{tx.statusTestimoni === 'sudah_diisi' ? 'Ulasan Diisi' : 'Minta Testimoni'}</span>
+                        </button>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-2">
                       <button
@@ -928,6 +1038,18 @@ export default function SalesTable({ onEdit, onDelete, onAdd }) {
                 setSelectedShippingTx(null);
               }}
               transaction={selectedShippingTx}
+            />
+          )}
+
+          {/* Modal Minta Testimoni Pembeli */}
+          {selectedTestimonialTx && (
+            <RequestTestimonialModal
+              isOpen={isTestimonialModalOpen}
+              onClose={() => {
+                setIsTestimonialModalOpen(false);
+                setSelectedTestimonialTx(null);
+              }}
+              transaction={selectedTestimonialTx}
             />
           )}
 

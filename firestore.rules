@@ -95,7 +95,7 @@ service cloud.firestore {
         (
           request.resource.data.status == 'menunggu' &&
           request.resource.data.sumber == 'publik' &&
-          request.resource.data.keys().hasOnly(['namaPembeli', 'isiTestimoni', 'rating', 'status', 'sumber', 'tanggal']) &&
+          request.resource.data.keys().hasOnly(['namaPembeli', 'isiTestimoni', 'rating', 'status', 'sumber', 'tanggal', 'referensiTransaksiId']) &&
           request.resource.data.namaPembeli is string &&
           request.resource.data.namaPembeli.size() > 0 &&
           request.resource.data.namaPembeli.size() <= 100 &&
@@ -104,7 +104,8 @@ service cloud.firestore {
           request.resource.data.isiTestimoni.size() <= 500 &&
           request.resource.data.rating is int &&
           request.resource.data.rating >= 1 &&
-          request.resource.data.rating <= 5
+          request.resource.data.rating <= 5 &&
+          (!('referensiTransaksiId' in request.resource.data) || (request.resource.data.referensiTransaksiId is string && request.resource.data.referensiTransaksiId.size() <= 100))
         ) ||
         (isAuthenticated() && isAdmin())
       );

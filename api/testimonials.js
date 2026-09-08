@@ -112,8 +112,51 @@ export default async function handler(req, res) {
     });
   }
 
-  // 2. GET: Mengambil testimoni berstatus disetujui untuk publik
+  // 2. GET: Mengambil testimoni atau lookup transaksi
   if (req.method === 'GET') {
+    // Lookup detail transaksi jika ada query ref atau trxId
+    if (req.query.ref || req.query.trxId) {
+      try {
+        const ref = (req.query.ref || req.query.trxId || '').trim();
+        const db = getAdminDb();
+        let txDoc = null;
+
+        // Coba direct doc ID
+        try {
+          const docDirect = await db.collection('transactions').doc(ref).get();
+          if (docDirect.exists) {
+            txDoc = { id: docDirect.id, ...docDirect.data() };
+          }
+        } catch {
+          // Abaikan jika bukan ID valid
+        }
+
+        // Jika belum ketemu, cari by kodeTestimoni
+        if (!txDoc) {
+          const qTrx = await db.collection('transactions').where('kodeTestimoni', '==', ref).limit(1).get();
+          if (!qTrx.empty) {
+            txDoc = { id: qTrx.docs[0].id, ...qTrx.docs[0].data() };
+          }
+        }
+
+        if (txDoc) {
+          return res.status(200).json({
+            success: true,
+            found: true,
+            namaPembeli: txDoc.namaPenerima || '',
+            namaBarang: txDoc.itemName || '',
+            kodeTestimoni: txDoc.kodeTestimoni || '',
+            statusTestimoni: txDoc.statusTestimoni || 'belum_diminta',
+          });
+        }
+
+        return res.status(404).json({ success: false, found: false, message: 'Transaksi tidak ditemukan' });
+      } catch (lookupErr) {
+        console.error('Error lookup transaksi:', lookupErr);
+        return res.status(500).json({ success: false, message: lookupErr.message });
+      }
+    }
+
     try {
       const db = getAdminDb();
       const snapshot = await db
@@ -159,14 +202,13 @@ export default async function handler(req, res) {
       const nama = (body.namaPembeli || '').trim().slice(0, 50);
       const isi = (body.isiTestimoni || '').trim().slice(0, 500);
       const rating = Math.min(5, Math.max(1, Math.round(Number(body.rating) || 5)));
-      const barang = (body.namaBarang || '').trim().slice(0, 100);
-      const fotoUrl = body.fotoUrl || '';
+      const referensiTransaksiId = (body.referensiTransaksiId || '').trim();
 
       if (!nama || nama.length < 2) {
         return res.status(400).json({ success: false, message: 'Nama pembeli minimal 2 karakter.' });
       }
-      if (!isi || isi.length < 5) {
-        return res.status(400).json({ success: false, message: 'Isi ulasan minimal 5 karakter.' });
+      if (!isi || isi.length < 10) {
+        return res.status(400).json({ success: false, message: 'Isi ulasan minimal 10 karakter.' });
       }
 
       const now = new Date();
@@ -181,8 +223,42 @@ export default async function handler(req, res) {
         status: 'menunggu',
       };
 
+      if (referensiTransaksiId) {
+        newDoc.referensiTransaksiId = referensiTransaksiId;
+      }
+
       const db = getAdminDb();
       const docRef = await db.collection('testimonials').add(newDoc);
+
+      // Jika ada keterkaitan transaksi, update statusTestimoni transaksi menjadi 'sudah_diisi'
+      if (referensiTransaksiId) {
+        try {
+          // Coba update via doc ID langsung
+          const trxRef = db.collection('transactions').doc(referensiTransaksiId);
+          const trxSnap = await trxRef.get();
+          if (trxSnap.exists) {
+            await trxRef.update({
+              statusTestimoni: 'sudah_diisi',
+              updatedAt: now.toISOString(),
+            });
+          } else {
+            // Cari via kodeTestimoni
+            const qTrx = await db
+              .collection('transactions')
+              .where('kodeTestimoni', '==', referensiTransaksiId)
+              .limit(1)
+              .get();
+            if (!qTrx.empty) {
+              await qTrx.docs[0].ref.update({
+                statusTestimoni: 'sudah_diisi',
+                updatedAt: now.toISOString(),
+              });
+            }
+          }
+        } catch (updateTrxErr) {
+          console.warn('Gagal update statusTestimoni di transaksi:', updateTrxErr);
+        }
+      }
 
       return res.status(201).json({
         success: true,

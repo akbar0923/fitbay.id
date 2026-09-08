@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { getPublicTestimonials, submitPublicTestimonial } from '../firebase/testimonialService';
 import logoImg from '../assets/logo.png';
 import toast from 'react-hot-toast';
@@ -8,9 +8,14 @@ const COOLDOWN_KEY = 'fitbay_testimonial_last_sent';
 const COOLDOWN_DURATION_MS = 10 * 60 * 1000; // 10 menit
 
 export default function TestimonialsPublic() {
+  const location = useLocation();
   const [testimonials, setTestimonials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Transaksi Terverifikasi (Minta Testimoni Otomatis)
+  const [transactionRef, setTransactionRef] = useState(null);
+  const [isPrefilled, setIsPrefilled] = useState(false);
 
   // Pagination / Load More
   const ITEMS_PER_PAGE = 9;
@@ -51,7 +56,33 @@ export default function TestimonialsPublic() {
   useEffect(() => {
     document.title = 'Testimoni & Ulasan Pembeli — Fitbay.id';
     loadTestimonials();
-  }, []);
+
+    // Cek apakah ada query param dari transaksi penjualan (Minta Testimoni Otomatis)
+    const params = new URLSearchParams(location.search);
+    const ref = params.get('ref') || params.get('kode') || '';
+    const nama = params.get('nama') || '';
+    const barang = params.get('barang') || '';
+    const trxId = params.get('trxId') || '';
+
+    if (ref || trxId || nama) {
+      setIsPrefilled(true);
+      setTransactionRef({
+        kode: ref,
+        nama: nama,
+        barang: barang,
+        trxId: trxId,
+      });
+      setForm((prev) => ({
+        ...prev,
+        namaPembeli: nama || prev.namaPembeli,
+        namaBarang: barang || prev.namaBarang,
+      }));
+      setIsFormOpen(true);
+      setTimeout(() => {
+        document.getElementById('form-ulasan-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 400);
+    }
+  }, [location.search]);
 
   // Summary statistics
   const stats = useMemo(() => {
@@ -158,6 +189,7 @@ export default function TestimonialsPublic() {
         rating: form.rating,
         namaBarang: form.namaBarang.trim(),
         fotoUrl: form.fotoUrl,
+        referensiTransaksiId: transactionRef?.trxId || transactionRef?.kode || '',
       });
 
       // Simpan timestamp cooldown
@@ -379,6 +411,28 @@ export default function TestimonialsPublic() {
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {/* Banner Sambutan Pembelian Terverifikasi (Minta Testimoni Otomatis) */}
+                  {isPrefilled && transactionRef && (
+                    <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-emerald-500/5 border border-emerald-500/30 text-xs text-gray-200 flex items-start gap-3 shadow-md animate-fadeIn">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 text-lg">
+                        🛍️
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-white text-sm">
+                            Halo Kak {transactionRef.nama || 'Pelanggan'}!
+                          </p>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            🔒 Pembelian Terverifikasi
+                          </span>
+                        </div>
+                        <p className="text-gray-300 leading-relaxed text-xs">
+                          Terima kasih sudah berbelanja {transactionRef.barang ? <strong className="text-emerald-300">{transactionRef.barang}</strong> : 'di Fitbay.id'}. Ulasan pengalaman belanja Kakak sangat berharga bagi kami. Mohon berikan penilaian bintang dan ulasan di bawah ini 🙏
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Honeypot field (hidden from real users, caught by bots) */}
                   <div style={{ display: 'none' }} aria-hidden="true">
                     <label htmlFor="website_url_hp">Website</label>
@@ -437,9 +491,17 @@ export default function TestimonialsPublic() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {/* Nama Pembeli */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-300 mb-1.5">
-                        Nama Lengkap / Panggilan <span className="text-red-400">*</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-gray-300">
+                          Nama Lengkap / Panggilan <span className="text-red-400">*</span>
+                        </label>
+                        {isPrefilled && (
+                          <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                            <span>🔒</span>
+                            <span>Terisi Otomatis</span>
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         required
@@ -453,9 +515,17 @@ export default function TestimonialsPublic() {
 
                     {/* Nama Barang yang dibeli (Opsional) */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-300 mb-1.5">
-                        Nama Barang yang Dibeli <span className="text-gray-500 font-normal">(Opsional)</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-gray-300">
+                          Nama Barang yang Dibeli <span className="text-gray-500 font-normal">(Opsional)</span>
+                        </label>
+                        {isPrefilled && form.namaBarang && (
+                          <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                            <span>🏷️</span>
+                            <span>Terisi Otomatis</span>
+                          </span>
+                        )}
+                      </div>
                       <input
                         type="text"
                         maxLength={100}

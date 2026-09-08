@@ -120,11 +120,13 @@ export async function submitPublicTestimonial({
   namaBarang = '',
   fotoUrl = '',
   honeypot = '',
+  referensiTransaksiId = '',
 }) {
   const cleanNama = (namaPembeli || '').trim().slice(0, 50);
   const cleanIsi = (isiTestimoni || '').trim().slice(0, 500);
   const cleanRating = parseInt(Math.min(5, Math.max(1, Math.round(Number(rating) || 5))), 10);
   const cleanBarang = (namaBarang || '').trim().slice(0, 100);
+  const cleanRef = (referensiTransaksiId || '').trim().slice(0, 100);
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
 
@@ -142,6 +144,7 @@ export async function submitPublicTestimonial({
     namaBarang: cleanBarang,
     fotoUrl: fotoUrl || '',
     honeypot: honeypot || '',
+    referensiTransaksiId: cleanRef,
   };
 
   // 1. Coba kirim via Serverless API /api/testimonials terlebih dahulu (Bypass client rules via Admin SDK)
@@ -177,9 +180,23 @@ export async function submitPublicTestimonial({
       sumber: 'publik',
       tanggal: dateStr,
     };
+    if (cleanRef) {
+      newDoc.referensiTransaksiId = cleanRef;
+    }
 
-    const docRef = await addDoc(getTestimonialsRef(), newDoc);
-    return { id: docRef.id, ...newDoc };
+    try {
+      const docRef = await addDoc(getTestimonialsRef(), newDoc);
+      return { id: docRef.id, ...newDoc };
+    } catch (innerErr) {
+      // Jika error karena rules belum mengizinkan referensiTransaksiId (hasOnly violation), coba kirim tanpa referensiTransaksiId
+      if (cleanRef && (innerErr.code === 'permission-denied' || innerErr.message?.includes('permission'))) {
+        console.warn('addDoc dengan referensiTransaksiId ditolak rules, mencoba kirim ulang tanpa referensiTransaksiId...');
+        delete newDoc.referensiTransaksiId;
+        const fallbackDocRef = await addDoc(getTestimonialsRef(), newDoc);
+        return { id: fallbackDocRef.id, ...newDoc };
+      }
+      throw innerErr;
+    }
   } catch (firestoreErr) {
     console.error('Error direct client addDoc:', firestoreErr);
     if (firestoreErr.code === 'permission-denied' || firestoreErr.message?.includes('permission')) {
