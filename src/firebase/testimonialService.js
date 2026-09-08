@@ -123,7 +123,7 @@ export async function submitPublicTestimonial({
 }) {
   const cleanNama = (namaPembeli || '').trim().slice(0, 50);
   const cleanIsi = (isiTestimoni || '').trim().slice(0, 500);
-  const cleanRating = Math.min(5, Math.max(1, Math.round(Number(rating) || 5)));
+  const cleanRating = parseInt(Math.min(5, Math.max(1, Math.round(Number(rating) || 5))), 10);
   const cleanBarang = (namaBarang || '').trim().slice(0, 100);
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
@@ -131,8 +131,8 @@ export async function submitPublicTestimonial({
   if (!cleanNama || cleanNama.length < 2) {
     throw new Error('Nama pembeli minimal 2 karakter.');
   }
-  if (!cleanIsi || cleanIsi.length < 5) {
-    throw new Error('Isi ulasan minimal 5 karakter.');
+  if (!cleanIsi || cleanIsi.length < 10) {
+    throw new Error('Isi ulasan minimal 10 karakter.');
   }
 
   const payload = {

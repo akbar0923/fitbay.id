@@ -89,10 +89,30 @@ service cloud.firestore {
     // - HANYA Admin/Superadmin yang berhak mengupdate status/edit isi ulasan dan menghapus testimoni
     match /testimonials/{testimonialId} {
       allow read: if (resource.data.status == 'disetujui') || (isAuthenticated() && isAdmin());
+
       allow create: if (
-        (request.resource.data.status == 'menunggu' && request.resource.data.sumber == 'publik') ||
+        (
+          request.resource.data.status == 'menunggu' &&
+          request.resource.data.sumber == 'publik' &&
+          request.resource.data.keys().hasOnly([
+            'namaPembeli', 'isiTestimoni', 'rating', 'status', 'sumber', 'tanggal',
+            'namaBarang', 'fotoUrl', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.namaPembeli is string &&
+          request.resource.data.namaPembeli.size() > 0 &&
+          request.resource.data.namaPembeli.size() <= 100 &&
+          request.resource.data.isiTestimoni is string &&
+          request.resource.data.isiTestimoni.size() >= 10 &&
+          request.resource.data.isiTestimoni.size() <= 500 &&
+          request.resource.data.rating is int &&
+          request.resource.data.rating >= 1 &&
+          request.resource.data.rating <= 5 &&
+          (!('namaBarang' in request.resource.data) || request.resource.data.namaBarang is string) &&
+          (!('fotoUrl' in request.resource.data) || request.resource.data.fotoUrl is string)
+        ) ||
         (isAuthenticated() && isAdmin())
       );
+
       allow update, delete: if isAuthenticated() && isAdmin();
     }
     

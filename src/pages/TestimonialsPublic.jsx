@@ -145,8 +145,8 @@ export default function TestimonialsPublic() {
       toast.error('Nama pembeli minimal 2 karakter');
       return;
     }
-    if (isi.length < 5) {
-      toast.error('Isi ulasan minimal 5 karakter');
+    if (isi.length < 10) {
+      toast.error('Isi ulasan minimal 10 karakter');
       return;
     }
 
@@ -480,8 +480,9 @@ export default function TestimonialsPublic() {
                     <textarea
                       required
                       rows={3}
+                      minLength={10}
                       maxLength={500}
-                      placeholder="Ceritakan kondisi barang, kecepatan pengiriman, atau respon admin Fitbay.id..."
+                      placeholder="Ceritakan kondisi barang, kecepatan pengiriman, atau respon admin Fitbay.id (minimal 10 karakter)..."
                       value={form.isiTestimoni}
                       onChange={(e) => setForm({ ...form, isiTestimoni: e.target.value })}
                       className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors resize-none"
