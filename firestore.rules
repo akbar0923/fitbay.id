@@ -80,6 +80,21 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
+
+    // 7. Koleksi Testimoni Pelanggan (Testimonials)
+    // - Siapa saja tanpa login boleh membaca ulasan yang berstatus 'disetujui'
+    // - Admin/Superadmin boleh membaca SEMUA testimoni (termasuk 'menunggu' dan 'ditolak')
+    // - Siapa saja boleh mengirim ulasan publik dengan syarat status wajib 'menunggu' dan sumber 'publik'
+    // - Admin/Superadmin boleh membuat testimoni langsung dengan status atau sumber apapun
+    // - HANYA Admin/Superadmin yang berhak mengupdate status/edit isi ulasan dan menghapus testimoni
+    match /testimonials/{testimonialId} {
+      allow read: if (resource.data.status == 'disetujui') || isAdmin();
+      allow create: if (
+        (request.resource.data.status == 'menunggu' && request.resource.data.sumber == 'publik') ||
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
     
     // Blokir total akses untuk koleksi liar lainnya
     match /{document=**} {

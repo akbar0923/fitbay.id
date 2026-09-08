@@ -19,6 +19,8 @@ import ProfitSharing from './pages/ProfitSharing';
 import Withdrawals from './pages/Withdrawals';
 import Users from './pages/Users';
 import Reports from './pages/Reports';
+import TestimonialsPublic from './pages/TestimonialsPublic';
+import TestimonialsAdmin from './pages/TestimonialsAdmin';
 import PwaInstallPrompt from './components/common/PwaInstallPrompt';
 import { Toaster } from 'react-hot-toast';
 
@@ -72,6 +74,11 @@ export default function App() {
           <Route path="/wa" element={<LinksPage />} />
           <Route path="/whatsapp" element={<LinksPage />} />
 
+          {/* Halaman Testimoni & Ulasan Publik (Tanpa Login) */}
+          <Route path="/testimoni" element={<TestimonialsPublic />} />
+          <Route path="/ulasan" element={<TestimonialsPublic />} />
+          <Route path="/reviews" element={<TestimonialsPublic />} />
+
           {/* Protected App Routes */}
           <Route
             path="/*"
@@ -94,6 +101,24 @@ export default function App() {
                               element={
                                 <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
                                   <Owners />
+                                </ProtectedRoute>
+                              }
+                            />
+
+                            {/* Halaman Kelola Testimoni (Super Admin & Admin Operasional) */}
+                            <Route
+                              path="/testimonials"
+                              element={
+                                <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
+                                  <TestimonialsAdmin />
+                                </ProtectedRoute>
+                              }
+                            />
+                            <Route
+                              path="/admin/testimoni"
+                              element={
+                                <ProtectedRoute allowedRoles={['superadmin', 'admin']}>
+                                  <TestimonialsAdmin />
                                 </ProtectedRoute>
                               }
                             />
