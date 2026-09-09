@@ -5,7 +5,7 @@ import { useSales } from '../../context/SalesContext';
 import toast from 'react-hot-toast';
 
 export default function RequestTestimonialModal({ isOpen, onClose, transaction }) {
-  const { updateTransaction } = useSales();
+  const { updateTransactionStatusTestimoni } = useSales();
   const [copied, setCopied] = useState(false);
   const [updating, setUpdating] = useState(false);
 
@@ -27,21 +27,21 @@ export default function RequestTestimonialModal({ isOpen, onClose, transaction }
 
   // Buat link unik dengan query params
   const origin = window.location.origin;
-  const testimonialUrl = `${origin}/testimoni?ref=${encodeURIComponent(kodeTestimoni)}&nama=${encodeURIComponent(namaPenerima)}&barang=${encodeURIComponent(namaBarang)}&trxId=${encodeURIComponent(transaction.id)}`;
+  const trxQuery = transaction.id ? `&trxId=${encodeURIComponent(transaction.id)}` : '';
+  const testimonialUrl = `${origin}/testimoni?ref=${encodeURIComponent(kodeTestimoni)}&nama=${encodeURIComponent(namaPenerima)}&barang=${encodeURIComponent(namaBarang)}${trxQuery}`;
 
   // Buat draft pesan WhatsApp yang ramah dan profesional
   const waMessage = `Halo Kak ${namaPenerima}! Terima kasih banyak sudah berbelanja ${namaBarang} di Fitbay.id 🙏\n\nBoleh minta tolong luangkan waktu 30 detik untuk memberikan ulasan pengalaman belanja Kakak di link resmi kami? Ulasan Kakak sangat berharga bagi kami:\n\n${testimonialUrl}\n\nTerima kasih banyak ya Kak! Sehat selalu ✨`;
 
   // Helper update status di Firestore
   const ensureStatusUpdated = async () => {
+    if (!transaction || transaction.isReadOnly || !transaction.id) return;
     if (transaction.statusTestimoni !== 'sudah_diisi') {
       try {
         setUpdating(true);
-        await updateTransaction(transaction.id, {
-          ...transaction,
-          kodeTestimoni: kodeTestimoni,
-          statusTestimoni: 'sudah_diminta',
-        });
+        if (updateTransactionStatusTestimoni) {
+          await updateTransactionStatusTestimoni(transaction.id, 'sudah_diminta', kodeTestimoni);
+        }
       } catch (err) {
         console.error('Gagal update status transaksi:', err);
       } finally {

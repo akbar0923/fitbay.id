@@ -42,9 +42,6 @@ export default function Withdrawals() {
 
   // Transaksi aktif sesuai filter periode
   const activeTransactions = useMemo(() => {
-    if (salesPeriod === '2026-09-08') {
-      return transactions.filter((t) => t.date === '2026-09-08');
-    }
     if (salesPeriod === 'month') {
       return transactions.filter((t) => (t.date || '').startsWith('2026-09'));
     }
@@ -61,9 +58,6 @@ export default function Withdrawals() {
 
   // Penarikan aktif sesuai filter periode
   const activeWithdrawals = useMemo(() => {
-    if (salesPeriod === '2026-09-08') {
-      return withdrawals.filter((w) => w.date === '2026-09-08');
-    }
     if (salesPeriod === 'month') {
       return withdrawals.filter((w) => (w.date || '').startsWith('2026-09'));
     }
@@ -719,17 +713,64 @@ export default function Withdrawals() {
     const commissionsList = [];
     sourceTxs.forEach((tx) => {
       if (tx.status !== 'Terjual') return;
-      const comm = Number(tx.profitSharing?.[normalizedKey] || tx.profitSharing?.[teamDetailKey] || 0);
-      if (comm > 0) {
-        commissionsList.push({
-          id: tx.id,
-          date: tx.date,
-          itemName: tx.itemName || (tx.items?.map((i) => i.itemName).join(', ') || 'Barang Titipan'),
-          ownerName: tx.ownerName || 'Penitip Luar',
-          sellingPrice: Number(tx.sellingPrice || 0),
-          commission: comm,
-          buyerName: tx.namaPenerima || tx.buyerName || '-',
+
+      if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+        tx.items.forEach((it, idx) => {
+          const owner = it.ownerName || tx.ownerName || '';
+          // Hanya hitung komisi dari penitip luar (bukan sesama anggota tim)
+          if (!getTeamMemberKey(owner)) {
+            const sell = Number(it.sellingPrice || 0);
+            const cost = Number(it.costPrice || 0);
+            const profit = Number(it.profit !== undefined ? it.profit : sell - cost);
+            const custom = it.skemaCustom || tx.skemaCustom || tx.ownerCustomScheme;
+            const cPct = custom?.[normalizedKey] !== undefined ? Number(custom[normalizedKey]) : 5;
+            const comm = it.profitSharing?.[normalizedKey] !== undefined
+              ? Number(it.profitSharing[normalizedKey])
+              : (normalizedKey === 'nesa' && it.profitSharing?.nessa !== undefined
+                ? Number(it.profitSharing.nessa)
+                : Math.round((profit * cPct) / 100));
+
+            if (comm > 0) {
+              commissionsList.push({
+                id: it.id || `${tx.id}_comm_${idx}`,
+                txId: tx.id,
+                date: it.sourceTxDate || tx.date,
+                itemName: it.itemName || 'Barang Titipan',
+                ownerName: owner || 'Penitip Luar',
+                sellingPrice: sell,
+                commission: comm,
+                buyerName: tx.namaPenerima || tx.buyerName || '-',
+              });
+            }
+          }
         });
+      } else {
+        const owner = tx.ownerName || tx.owner || '';
+        if (!getTeamMemberKey(owner)) {
+          const sell = Number(tx.sellingPrice || 0);
+          const cost = Number(tx.costPrice || 0);
+          const profit = Number(tx.profit !== undefined ? tx.profit : sell - cost);
+          const custom = tx.skemaCustom || tx.ownerCustomScheme;
+          const cPct = custom?.[normalizedKey] !== undefined ? Number(custom[normalizedKey]) : 5;
+          const comm = tx.profitSharing?.[normalizedKey] !== undefined
+            ? Number(tx.profitSharing[normalizedKey])
+            : (normalizedKey === 'nesa' && tx.profitSharing?.nessa !== undefined
+              ? Number(tx.profitSharing.nessa)
+              : Math.round((profit * cPct) / 100));
+
+          if (comm > 0) {
+            commissionsList.push({
+              id: tx.id,
+              txId: tx.id,
+              date: tx.date,
+              itemName: tx.itemName || 'Barang Titipan',
+              ownerName: owner || 'Penitip Luar',
+              sellingPrice: sell,
+              commission: comm,
+              buyerName: tx.namaPenerima || tx.buyerName || '-',
+            });
+          }
+        }
       }
     });
     commissionsList.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -841,7 +882,6 @@ export default function Withdrawals() {
           <div className="flex dark:bg-surface-300 bg-white rounded-xl p-1 border dark:border-white/5 border-gray-200 shadow-sm overflow-x-auto">
             {[
               { id: 'all', label: 'Semua Waktu (Akumulatif Kas)' },
-              { id: '2026-09-08', label: 'Penjualan 8 Sep 2026' },
               { id: 'month', label: 'Bulan Ini (Sep 2026)' },
               { id: 'custom', label: 'Kustom' },
             ].map((p) => (
@@ -876,13 +916,6 @@ export default function Withdrawals() {
               onChange={(e) => setCustomPeriodEnd(e.target.value)}
               className="px-2.5 py-1 text-xs rounded-lg dark:bg-surface-300 bg-white border dark:border-white/10 border-gray-300 dark:text-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-accent"
             />
-          </div>
-        )}
-
-        {salesPeriod === '2026-09-08' && (
-          <div className="text-xs text-emerald-400 font-semibold pr-2 flex items-center gap-1.5 animate-fade-in">
-            <span>✨</span>
-            <span>Menampilkan data batch penjualan 8 September 2026 (Total Omset: Rp 470.000)</span>
           </div>
         )}
       </div>

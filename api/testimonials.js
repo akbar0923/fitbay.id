@@ -311,36 +311,6 @@ export default async function handler(req, res) {
         docRefId = docRef.id;
       }
 
-      // Jika ada keterkaitan transaksi, update statusTestimoni transaksi menjadi 'sudah_diisi'
-      if (referensiTransaksiId) {
-        try {
-          // Coba update via doc ID langsung
-          const trxRef = db.collection('transactions').doc(referensiTransaksiId);
-          const trxSnap = await trxRef.get();
-          if (trxSnap.exists) {
-            await trxRef.update({
-              statusTestimoni: 'sudah_diisi',
-              updatedAt: now.toISOString(),
-            });
-          } else {
-            // Cari via kodeTestimoni
-            const qTrx = await db
-              .collection('transactions')
-              .where('kodeTestimoni', '==', referensiTransaksiId)
-              .limit(1)
-              .get();
-            if (!qTrx.empty) {
-              await qTrx.docs[0].ref.update({
-                statusTestimoni: 'sudah_diisi',
-                updatedAt: now.toISOString(),
-              });
-            }
-          }
-        } catch (updateTrxErr) {
-          console.warn('Gagal update statusTestimoni di transaksi:', updateTrxErr);
-        }
-      }
-
       return res.status(201).json({
         success: true,
         id: docRefId,

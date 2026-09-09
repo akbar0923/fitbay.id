@@ -305,17 +305,24 @@ export function SalesProvider({ children }) {
 
   const updateTransaction = async (id, data) => {
     try {
-      let sellingPrice = Number(data.sellingPrice || 0);
-      let costPrice = Number(data.costPrice || 0);
-      let profit = 0;
-      let sharing = {};
-      let finalItems = data.items || null;
-      let itemName = data.itemName || '';
-      let kodeBarang = data.kodeBarang || null;
-      let ownerName = data.ownerName || 'Akbar';
-      let category = data.category || 'Baju';
+      const existing = state.transactions.find((t) => t.id === id) || {};
 
-      if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+      const hasNewItems = data.items !== undefined && Array.isArray(data.items);
+      const hasNewSellingPrice = data.sellingPrice !== undefined;
+      const hasNewCostPrice = data.costPrice !== undefined;
+      const hasNewScheme = data.skemaCustom !== undefined || data.ownerCustomScheme !== undefined;
+
+      let sellingPrice = hasNewSellingPrice ? Number(data.sellingPrice || 0) : Number(existing.sellingPrice || 0);
+      let costPrice = hasNewCostPrice ? Number(data.costPrice || 0) : Number(existing.costPrice || 0);
+      let profit = existing.profit || 0;
+      let sharing = existing.profitSharing || {};
+      let finalItems = hasNewItems ? data.items : (existing.items || null);
+      let itemName = data.itemName !== undefined ? data.itemName : (existing.itemName || '');
+      let kodeBarang = data.kodeBarang !== undefined ? data.kodeBarang : (existing.kodeBarang || null);
+      let ownerName = data.ownerName !== undefined ? data.ownerName : (existing.ownerName || 'Akbar');
+      let category = data.category !== undefined ? data.category : (existing.category || 'Baju');
+
+      if (hasNewItems && data.items.length > 0) {
         const totals = calculateOrderTotals(data.items, profitSharingConfig);
         sellingPrice = totals.totalSelling;
         costPrice = totals.totalCost;
@@ -338,9 +345,9 @@ export function SalesProvider({ children }) {
           const categories = [...new Set(data.items.map((it) => it.category).filter(Boolean))];
           category = categories.length === 1 ? categories[0] : 'Campuran';
         }
-      } else {
+      } else if (hasNewSellingPrice || hasNewCostPrice || hasNewScheme) {
         let schemeToUse = profitSharingConfig;
-        const customScheme = data.skemaCustom || data.ownerCustomScheme;
+        const customScheme = data.skemaCustom || data.ownerCustomScheme || existing.skemaCustom || existing.ownerCustomScheme;
         if (customScheme) {
           schemeToUse = {};
           Object.keys(profitSharingConfig).forEach((k) => {
@@ -357,20 +364,21 @@ export function SalesProvider({ children }) {
       }
 
       const updated = {
+        ...existing,
         ...data,
         id,
         itemName,
         ownerName,
         category,
-        paymentMethod: data.paymentMethod || 'Transfer Bank',
+        paymentMethod: data.paymentMethod !== undefined ? data.paymentMethod : (existing.paymentMethod || 'Transfer Bank'),
         costPrice,
         sellingPrice,
         profit,
         profitSharing: sharing,
-        ownerCustomScheme: data.skemaCustom || data.ownerCustomScheme || null,
-        skemaCustom: data.skemaCustom || data.ownerCustomScheme || null,
+        ownerCustomScheme: data.skemaCustom || data.ownerCustomScheme || existing.ownerCustomScheme || null,
+        skemaCustom: data.skemaCustom || data.ownerCustomScheme || existing.skemaCustom || null,
         kodeBarang: kodeBarang || null,
-        inventoryItemId: data.inventoryItemId || (finalItems?.[0]?.inventoryItemId) || null,
+        inventoryItemId: data.inventoryItemId !== undefined ? data.inventoryItemId : (finalItems?.[0]?.inventoryItemId || existing.inventoryItemId || null),
         items: finalItems,
         updatedAt: new Date().toISOString(),
       };
@@ -394,6 +402,30 @@ export function SalesProvider({ children }) {
         toast.error(`Gagal memperbarui transaksi: ${err.message || 'Coba lagi.'}`);
       }
       throw err;
+    }
+  };
+
+  // Update status testimoni transaksi secara aman dan presisi
+  const updateTransactionStatusTestimoni = async (id, statusTestimoni, kodeTestimoni) => {
+    if (!id) return;
+    try {
+      const updateData = {
+        statusTestimoni,
+        updatedAt: new Date().toISOString(),
+      };
+      if (kodeTestimoni) {
+        updateData.kodeTestimoni = kodeTestimoni;
+      }
+      await updateTransactionDoc(id, updateData);
+      const existing = state.transactions.find((t) => t.id === id);
+      if (existing) {
+        dispatch({
+          type: ACTIONS.UPDATE_TRANSACTION,
+          payload: { ...existing, ...updateData },
+        });
+      }
+    } catch (err) {
+      console.warn('Gagal mengupdate status testimoni transaksi:', err);
     }
   };
 
@@ -614,6 +646,7 @@ export function SalesProvider({ children }) {
     addTransaction,
     addTransactionsBatch,
     updateTransaction,
+    updateTransactionStatusTestimoni,
     mergeTransactions,
     unmergeTransaction,
     deleteTransaction,

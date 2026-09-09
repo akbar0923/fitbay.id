@@ -12,7 +12,7 @@ import RequestTestimonialModal from '../components/sales/RequestTestimonialModal
 import toast from 'react-hot-toast';
 
 export default function TestimonialsAdmin() {
-  const { transactions, updateTransaction } = useSales();
+  const { transactions } = useSales();
   const [testimonials, setTestimonials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -231,14 +231,6 @@ export default function TestimonialsAdmin() {
     try {
       if (editingItem) {
         await updateTestimonialDoc(editingItem.id, formData);
-
-        // Jika dokumen ini terhubung dengan transaksi, tandai transaksi sudah diisi
-        if (editingItem.referensiTransaksiId && updateTransaction) {
-          updateTransaction(editingItem.referensiTransaksiId, {
-            statusTestimoni: 'sudah_diisi',
-          }).catch((e) => console.warn('Update status transaksi gagal:', e));
-        }
-
         toast.success('Testimoni berhasil diperbarui');
         setEditingItem(null);
       } else {
@@ -654,14 +646,22 @@ export default function TestimonialsAdmin() {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <button
                           onClick={() => {
-                            setSelectedTxForModal({
-                              id: item.referensiTransaksiId || item.id,
-                              namaPenerima: item.namaPembeli,
-                              itemName: item.namaBarang,
-                              noHpPenerima: item.noHp,
-                              kodeTestimoni: item.kodeTestimoni,
-                              statusTestimoni: 'belum_diminta',
-                            });
+                            const realTx = item.referensiTransaksiId
+                              ? transactions.find((t) => t.id === item.referensiTransaksiId)
+                              : null;
+                            if (realTx) {
+                              setSelectedTxForModal(realTx);
+                            } else {
+                              setSelectedTxForModal({
+                                id: null,
+                                isReadOnly: true,
+                                namaPenerima: item.namaPembeli,
+                                itemName: item.namaBarang,
+                                noHpPenerima: item.noHp,
+                                kodeTestimoni: item.kodeTestimoni,
+                                statusTestimoni: 'belum_diminta',
+                              });
+                            }
                             setIsTestimonialModalOpen(true);
                           }}
                           className="px-3 py-1.5 bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] border border-[#25D366]/40 text-xs font-bold rounded-xl transition-all flex items-center gap-1"
