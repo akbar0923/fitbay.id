@@ -85,6 +85,8 @@ export default function MyItems() {
     const result = [];
     const processedCodes = new Set();
     const processedInventoryItemIds = new Set();
+    const processedTxIds = new Set();
+    const processedTxItemKeys = new Set();
 
     // 1. Ambil dari koleksi inventory milik user ini (Pencocokan Persis / Exact Match)
     items.forEach((item) => {
@@ -99,9 +101,16 @@ export default function MyItems() {
       if (isSold) {
         if (item.referensiTransaksiId) {
           linkedTx = transactions.find((t) => t.id === item.referensiTransaksiId);
+          processedTxIds.add(item.referensiTransaksiId);
         }
         if (!linkedTx && item.kodeBarang) {
           linkedTx = transactions.find((t) => t.kodeBarang === item.kodeBarang);
+        }
+        if (linkedTx) {
+          // Jika transaksi single item atau hanya memiliki 1 item, tandai seluruh tx sudah diproses
+          if (!linkedTx.items || linkedTx.items.length <= 1) {
+            processedTxIds.add(linkedTx.id);
+          }
         }
         if (linkedTx && Array.isArray(linkedTx.items) && linkedTx.items.length > 0) {
           // Prioritaskan pencocokan via inventoryItemId atau kodeBarang
@@ -117,6 +126,11 @@ export default function MyItems() {
                 (it.itemName && it.itemName.trim().toLowerCase() === (item.namaBarang || '').trim().toLowerCase()) ||
                 (it.name && it.name.trim().toLowerCase() === (item.namaBarang || '').trim().toLowerCase())
             );
+          }
+          if (matchedItemInTx) {
+            if (matchedItemInTx.id) processedTxItemKeys.add(`${linkedTx.id}_${matchedItemInTx.id}`);
+            if (matchedItemInTx.kodeBarang) processedCodes.add(matchedItemInTx.kodeBarang.toLowerCase());
+            if (matchedItemInTx.inventoryItemId) processedInventoryItemIds.add(matchedItemInTx.inventoryItemId);
           }
         }
       }
@@ -167,12 +181,16 @@ export default function MyItems() {
     // 2. Ambil dari koleksi transactions langsung (yang belum terhubung ke inventory)
     transactions.forEach((tx) => {
       if (tx.status !== 'Terjual') return;
+      if (processedTxIds.has(tx.id)) return;
 
       if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
         // Multi-item transaction: bongkar per item
         tx.items.forEach((it, idx) => {
+          if (it.id && processedTxItemKeys.has(`${tx.id}_${it.id}`)) return;
           if (it.kodeBarang && processedCodes.has(it.kodeBarang.toLowerCase())) return;
           if (it.inventoryItemId && processedInventoryItemIds.has(it.inventoryItemId)) return;
+          if (tx.kodeBarang && processedCodes.has(tx.kodeBarang.toLowerCase())) return;
+          if (tx.inventoryItemId && processedInventoryItemIds.has(tx.inventoryItemId)) return;
 
           const itOwner = (it.ownerName || tx.ownerName || '').trim().toLowerCase();
           const isMyItem = userIdentifiers.some((id) => itOwner.includes(id));
